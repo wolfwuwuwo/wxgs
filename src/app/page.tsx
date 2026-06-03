@@ -145,7 +145,7 @@ const physicalSubModules: { id: ViewId; title: string; description: string; icon
   { id: 'physical-diffraction', title: '全波前矢量衍射工坊', description: '选择口径类型与尺寸，2D FFT矢量衍射积分，即时生成菲涅耳与夫琅禾费衍射强度图', iconText: 'D' },
   { id: 'physical-polarimeter', title: '旋光仪实验', description: '虚拟经典旋光仪，零位法测旋光度，钠灯光源→起偏器→样品管→检偏器→探测器，预设葡萄糖、蔗糖等', iconText: 'α' },
   { id: 'physical-scanner', title: '偏振视觉扫描仪', description: '调用摄像头，实时提取应力双折射，伪彩色应力光学标准配色，如偏光显微镜视场', iconText: '◎' },
-  { id: 'physical-lcvalve', title: '液晶旋光光阀实验台', description: '电压控制液晶旋光，常白/常黑切换，I-V曲线，RGB子像素演示，分子倾斜角可视化', iconText: 'LC' },
+  { id: 'physical-lcvalve', title: '液晶旋光光阀实验台', description: 'Oseen-Frank弹性理论+Berreman 4×4矩阵法，TN/IPS/VA模式对比，响应时间测量，视角特性，灰度寻址', iconText: 'LC' },
 ]
 
 const FONT = 'var(--font-ibm-plex-sans), system-ui, sans-serif'
