@@ -487,6 +487,7 @@ export default function VectorDiffractionWorkshop({ onBack }: { onBack: () => vo
         <div style={{
           width: '280px', flexShrink: 0, backgroundColor: '#FAFAFA',
           borderLeft: '1px solid #D0D0D0', overflowY: 'auto',
+          className: 'custom-scrollbar',
           padding: '16px',
         }}>
           {/* Aperture type selection */}

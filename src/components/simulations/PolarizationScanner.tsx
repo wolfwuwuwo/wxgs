@@ -209,6 +209,7 @@ export default function PolarizationVisionScanner({ onBack }: { onBack: () => vo
         <div style={{
           width: '280px', flexShrink: 0, backgroundColor: '#FAFAFA',
           borderLeft: '1px solid #D0D0D0', overflowY: 'auto', padding: '16px',
+          className: 'custom-scrollbar',
         }}>
           {/* Camera control */}
           <div style={{ marginBottom: '16px' }}>

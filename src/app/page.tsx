@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from 'react'
 import dynamic from 'next/dynamic'
+import { toast } from 'sonner'
 
 const JonesPolarizationLab = dynamic(
   () => import('@/components/simulations/JonesPolarizationLab'),
@@ -23,6 +24,10 @@ const PolarizationScanner = dynamic(
   () => import('@/components/simulations/PolarizationScanner'),
   { ssr: false }
 )
+const GaussianBeamTracer = dynamic(
+  () => import('@/components/simulations/GaussianBeamTracer'),
+  { ssr: false }
+)
 
 type ViewId =
   | 'home'
@@ -32,6 +37,10 @@ type ViewId =
   | 'physical-polarimeter'
   | 'physical-lcvalve'
   | 'physical-scanner'
+  | 'geometric-hub'
+  | 'geometric-raytracing'
+  | 'modern-hub'
+  | 'modern-gaussian'
 
 /* ─── SVG Icons ─── */
 function GeometricOpticsIcon() {
@@ -185,74 +194,54 @@ export default function Home() {
   if (currentView === 'physical-scanner') {
     return <div className={`min-h-screen flex flex-col ${fadeIn ? 'page-fade-in' : ''}`} style={{ background: '#FFFFFF' }}><PolarizationScanner onBack={goHome} /></div>
   }
+  if (currentView === 'modern-gaussian') {
+    return <div className={`min-h-screen flex flex-col ${fadeIn ? 'page-fade-in' : ''}`} style={{ background: '#FFFFFF' }}><GaussianBeamTracer onBack={goHome} /></div>
+  }
+
+  /* ─── Geometric Optics hub ─── */
+  if (currentView === 'geometric-hub') {
+    return (
+      <ModuleHub
+        title="几何光学" fadeIn={fadeIn} fadeOut={fadeOut}
+        onBack={goHome} footerText="v1.0 · 几何光学模块"
+        modules={[
+          { id: 'geometric-raytracing', title: '光线追迹与透镜成像', description: '交互式薄透镜成像：拖拽调节物距、焦距，实时渲染光路，追踪像距、放大率与虚实像判据', iconText: '▽' },
+        ]}
+        pressedCard={pressedCard} hoveredCard={hoveredCard}
+        setHoveredCard={setHoveredCard} setPressedCard={setPressedCard}
+        onNavigate={navigateTo}
+        comingSoon={['geometric-raytracing']}
+      />
+    )
+  }
+
+  /* ─── Modern Optics hub ─── */
+  if (currentView === 'modern-hub') {
+    return (
+      <ModuleHub
+        title="现代光学" fadeIn={fadeIn} fadeOut={fadeOut}
+        onBack={goHome} footerText="v1.0 · 现代光学模块"
+        modules={[
+          { id: 'modern-gaussian', title: '高斯光束追踪器', description: '拖拽调节束腰半径、波长、传输距离、透镜焦距，实时渲染光束宽度沙漏形包络曲线与光斑演化', iconText: 'G' },
+        ]}
+        pressedCard={pressedCard} hoveredCard={hoveredCard}
+        setHoveredCard={setHoveredCard} setPressedCard={setPressedCard}
+        onNavigate={navigateTo}
+      />
+    )
+  }
 
   /* ─── Physical Optics hub ─── */
   if (currentView === 'physical-hub') {
     return (
-      <div className={`min-h-screen flex flex-col ${fadeIn ? 'page-fade-in' : ''} ${fadeOut ? 'page-fade-out' : ''}`} style={{ background: '#FFFFFF' }}>
-        <header className="flex-shrink-0 flex items-center" style={{
-          height: '48px', backgroundColor: '#FFFFFF',
-          borderBottom: '1px solid #CCCCCC', paddingLeft: '24px', paddingRight: '24px',
-        }}>
-          <button onClick={goHome} style={{
-            fontFamily: FONT, fontSize: '12px', fontWeight: 400, color: '#555555',
-            background: 'none', border: 'none', cursor: 'pointer',
-            display: 'flex', alignItems: 'center', gap: '4px',
-            transition: 'color 200ms ease-out',
-          }} onMouseEnter={e => (e.currentTarget.style.color = '#1A1A1A')}
-             onMouseLeave={e => (e.currentTarget.style.color = '#555555')}>
-            ← 返回
-          </button>
-          <span style={{ margin: '0 12px', color: '#D0D0D0' }}>|</span>
-          <h1 style={{ fontFamily: FONT, fontSize: '20px', fontWeight: 600, color: '#1A1A1A', margin: 0 }}>物理光学</h1>
-        </header>
-
-        <main className="flex-1 dot-grid flex items-center justify-center" style={{ padding: '32px 24px' }}>
-          <div className="flex items-start justify-center gap-6 flex-wrap" style={{ maxWidth: '860px' }}>
-            {physicalSubModules.map((sub, idx) => {
-              const isHovered = hoveredCard === sub.id
-              const isPressed = pressedCard === sub.id
-              return (
-                <div key={sub.id} className={`optics-card card-entrance${idx > 0 ? '-delay-' + Math.min(idx, 2) : ''}`}
-                  role="button" tabIndex={0} aria-label={`进入${sub.title}`}
-                  onMouseEnter={() => setHoveredCard(sub.id)}
-                  onMouseLeave={() => { setHoveredCard(null); setPressedCard(null) }}
-                  onMouseDown={() => setPressedCard(sub.id)}
-                  onMouseUp={() => setPressedCard(null)}
-                  onClick={() => navigateTo(sub.id)}
-                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigateTo(sub.id) } }}
-                  style={{
-                    width: '240px', minHeight: '210px',
-                    backgroundColor: isPressed ? '#E6E9EC' : isHovered ? '#F0F3F6' : '#FAFAFA',
-                    border: `1px solid ${isHovered ? '#333333' : '#D0D0D0'}`,
-                    borderRadius: '2px', cursor: 'pointer',
-                    transition: isPressed ? 'transform 100ms ease-out, background-color 100ms ease-out, border-color 200ms ease-out' : 'background-color 200ms ease-out, border-color 200ms ease-out',
-                    transform: isPressed ? 'scale(0.97)' : 'scale(1)',
-                    display: 'flex', flexDirection: 'column', alignItems: 'center',
-                    padding: '28px 20px', userSelect: 'none',
-                  }}
-                >
-                  <div style={{
-                    width: '52px', height: '52px', borderRadius: '50%',
-                    border: '1.5px solid #333333', display: 'flex',
-                    alignItems: 'center', justifyContent: 'center',
-                    fontSize: sub.iconText.length > 1 ? '14px' : '20px', fontWeight: 600, color: '#333333',
-                    fontFamily: FONT, marginBottom: '14px',
-                  }}>
-                    {sub.iconText}
-                  </div>
-                  <h2 style={{ fontFamily: FONT, fontSize: '14px', fontWeight: 600, color: '#1A1A1A', margin: '0 0 8px 0', textAlign: 'center' }}>{sub.title}</h2>
-                  <p style={{ fontFamily: FONT, fontSize: '11px', fontWeight: 400, color: '#666666', margin: 0, textAlign: 'center', lineHeight: '1.5' }}>{sub.description}</p>
-                </div>
-              )
-            })}
-          </div>
-        </main>
-
-        <footer className="flex-shrink-0 flex items-center mt-auto" style={{ height: '24px', backgroundColor: '#FFFFFF', borderTop: '1px solid #CCCCCC', paddingLeft: '24px' }}>
-          <span style={{ fontFamily: FONT, fontSize: '10px', fontWeight: 400, color: '#888888' }} className="tabular-nums">v1.0 · 物理光学模块</span>
-        </footer>
-      </div>
+      <ModuleHub
+        title="物理光学" fadeIn={fadeIn} fadeOut={fadeOut}
+        onBack={goHome} footerText="v1.0 · 物理光学模块"
+        modules={physicalSubModules}
+        pressedCard={pressedCard} hoveredCard={hoveredCard}
+        setHoveredCard={setHoveredCard} setPressedCard={setPressedCard}
+        onNavigate={navigateTo}
+      />
     )
   }
 
@@ -276,8 +265,16 @@ export default function Home() {
                 onMouseLeave={() => { setHoveredCard(null); setPressedCard(null) }}
                 onMouseDown={() => setPressedCard(card.id)}
                 onMouseUp={() => setPressedCard(null)}
-                onClick={() => { if (card.id === 'physical') navigateTo('physical-hub') }}
-                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (card.id === 'physical') navigateTo('physical-hub') } }}
+                onClick={() => {
+                  if (card.id === 'physical') navigateTo('physical-hub')
+                  else if (card.id === 'geometric') navigateTo('geometric-hub')
+                  else if (card.id === 'modern') navigateTo('modern-hub')
+                }}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault();
+                  if (card.id === 'physical') navigateTo('physical-hub')
+                  else if (card.id === 'geometric') navigateTo('geometric-hub')
+                  else if (card.id === 'modern') navigateTo('modern-hub')
+                } }}
                 style={{
                   width: '280px', height: '360px',
                   backgroundColor: isPressed ? '#E6E9EC' : isHovered ? '#F0F3F6' : '#FAFAFA',
@@ -300,6 +297,113 @@ export default function Home() {
 
       <footer className="flex-shrink-0 flex items-center mt-auto" style={{ height: '24px', backgroundColor: '#FFFFFF', borderTop: '1px solid #CCCCCC', paddingLeft: '24px' }}>
         <span style={{ fontFamily: FONT, fontSize: '10px', fontWeight: 400, color: '#888888' }} className="tabular-nums">v1.0 · 高斯光束追踪 | 矢量衍射仿真 | 偏振琼斯分析</span>
+      </footer>
+    </div>
+  )
+}
+
+/* ─── Reusable Module Hub Component ─── */
+function ModuleHub({
+  title, fadeIn, fadeOut, onBack, footerText, modules, pressedCard, hoveredCard,
+  setHoveredCard, setPressedCard, onNavigate, comingSoon = [],
+}: {
+  title: string; fadeIn: boolean; fadeOut: boolean
+  onBack: () => void; footerText: string
+  modules: { id: ViewId; title: string; description: string; iconText: string }[]
+  pressedCard: string | null; hoveredCard: string | null
+  setHoveredCard: (id: string | null) => void; setPressedCard: (id: string | null) => void
+  onNavigate: (id: ViewId) => void; comingSoon?: string[]
+}) {
+  return (
+    <div className={`min-h-screen flex flex-col ${fadeIn ? 'page-fade-in' : ''} ${fadeOut ? 'page-fade-out' : ''}`} style={{ background: '#FFFFFF' }}>
+      <header className="flex-shrink-0 flex items-center" style={{
+        height: '48px', backgroundColor: '#FFFFFF',
+        borderBottom: '1px solid #CCCCCC', paddingLeft: '24px', paddingRight: '24px',
+      }}>
+        <button onClick={onBack} style={{
+          fontFamily: FONT, fontSize: '12px', fontWeight: 400, color: '#555555',
+          background: 'none', border: 'none', cursor: 'pointer',
+          display: 'flex', alignItems: 'center', gap: '4px',
+          transition: 'color 200ms ease-out',
+        }} onMouseEnter={e => (e.currentTarget.style.color = '#1A1A1A')}
+           onMouseLeave={e => (e.currentTarget.style.color = '#555555')}>
+          ← 返回
+        </button>
+        <span style={{ margin: '0 12px', color: '#D0D0D0' }}>|</span>
+        <h1 style={{ fontFamily: FONT, fontSize: '20px', fontWeight: 600, color: '#1A1A1A', margin: 0 }}>{title}</h1>
+      </header>
+
+      <main className="flex-1 dot-grid flex items-center justify-center" style={{ padding: '32px 24px' }}>
+        <div className="flex items-start justify-center gap-6 flex-wrap" style={{ maxWidth: '860px' }}>
+          {modules.map((sub, idx) => {
+            const isHovered = hoveredCard === sub.id
+            const isPressed = pressedCard === sub.id
+            const isComingSoon = comingSoon.includes(sub.id)
+            return (
+              <div key={sub.id} className={`optics-card card-entrance${idx > 0 ? '-delay-' + Math.min(idx, 2) : ''}`}
+                role="button" tabIndex={0} aria-label={`进入${sub.title}`}
+                onMouseEnter={() => setHoveredCard(sub.id)}
+                onMouseLeave={() => { setHoveredCard(null); setPressedCard(null) }}
+                onMouseDown={() => setPressedCard(sub.id)}
+                onMouseUp={() => setPressedCard(null)}
+                onClick={() => {
+                  if (isComingSoon) {
+                    toast(`${sub.title}模块正在开发中`, { description: '敬请期待下一版本更新' })
+                  } else {
+                    onNavigate(sub.id)
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    if (isComingSoon) {
+                      toast(`${sub.title}模块正在开发中`, { description: '敬请期待下一版本更新' })
+                    } else {
+                      onNavigate(sub.id)
+                    }
+                  }
+                }}
+                style={{
+                  width: '240px', minHeight: '210px',
+                  backgroundColor: isPressed ? '#E6E9EC' : isHovered ? '#F0F3F6' : '#FAFAFA',
+                  border: `1px solid ${isHovered ? '#333333' : '#D0D0D0'}`,
+                  borderRadius: '2px', cursor: 'pointer',
+                  transition: isPressed ? 'transform 100ms ease-out, background-color 100ms ease-out, border-color 200ms ease-out' : 'background-color 200ms ease-out, border-color 200ms ease-out',
+                  transform: isPressed ? 'scale(0.97)' : 'scale(1)',
+                  display: 'flex', flexDirection: 'column', alignItems: 'center',
+                  padding: '28px 20px', userSelect: 'none', position: 'relative',
+                }}
+              >
+                <div style={{
+                  width: '52px', height: '52px', borderRadius: '50%',
+                  border: '1.5px solid #333333', display: 'flex',
+                  alignItems: 'center', justifyContent: 'center',
+                  fontSize: sub.iconText.length > 1 ? '14px' : '20px', fontWeight: 600, color: '#333333',
+                  fontFamily: FONT, marginBottom: '14px',
+                }}>
+                  {sub.iconText}
+                </div>
+                <h2 style={{ fontFamily: FONT, fontSize: '14px', fontWeight: 600, color: '#1A1A1A', margin: '0 0 8px 0', textAlign: 'center' }}>{sub.title}</h2>
+                <p style={{ fontFamily: FONT, fontSize: '11px', fontWeight: 400, color: '#666666', margin: 0, textAlign: 'center', lineHeight: '1.5' }}>{sub.description}</p>
+                {isComingSoon && (
+                  <div style={{
+                    position: 'absolute', top: '10px', right: '10px',
+                    fontSize: '8px', fontWeight: 400, color: '#888888',
+                    fontFamily: FONT, padding: '1px 5px',
+                    border: '1px solid #D0D0D0', borderRadius: '2px',
+                    backgroundColor: '#FAFAFA',
+                  }}>
+                    即将上线
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </main>
+
+      <footer className="flex-shrink-0 flex items-center mt-auto" style={{ height: '24px', backgroundColor: '#FFFFFF', borderTop: '1px solid #CCCCCC', paddingLeft: '24px' }}>
+        <span style={{ fontFamily: FONT, fontSize: '10px', fontWeight: 400, color: '#888888' }} className="tabular-nums">{footerText}</span>
       </footer>
     </div>
   )

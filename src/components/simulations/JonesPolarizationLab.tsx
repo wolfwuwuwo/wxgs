@@ -596,6 +596,7 @@ export default function JonesPolarizationLab({ onBack }: { onBack: () => void })
         <div style={{
           width: '300px', flexShrink: 0, backgroundColor: '#FAFAFA',
           borderLeft: '1px solid #D0D0D0', overflowY: 'auto',
+          className: 'custom-scrollbar',
           padding: '16px',
         }}>
           {/* Input polarization */}

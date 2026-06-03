@@ -321,6 +321,7 @@ export default function PolarimeterExperiment({ onBack }: { onBack: () => void }
         <div style={{
           width: '300px', flexShrink: 0, backgroundColor: '#FAFAFA',
           borderLeft: '1px solid #D0D0D0', overflowY: 'auto', padding: '16px',
+          className: 'custom-scrollbar',
         }}>
           {/* Wavelength selection */}
           <div style={{ marginBottom: '16px' }}>
