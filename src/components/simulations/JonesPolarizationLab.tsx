@@ -287,29 +287,35 @@ function AngleDial({ angle, onChange, size = 64 }: { angle: number; onChange: (a
   const svgRef = useRef<SVGSVGElement>(null)
   const dragging = useRef(false)
 
-  const handleMouseMove = useCallback((e: MouseEvent) => {
-    if (!dragging.current || !svgRef.current) return
+  const onAngleChange = onChange
+
+  const handleInteraction = useCallback((clientX: number, clientY: number) => {
+    if (!svgRef.current) return
     const rect = svgRef.current.getBoundingClientRect()
     const cx = rect.left + rect.width / 2
     const cy = rect.top + rect.height / 2
-    let a = Math.atan2(e.clientY - cy, e.clientX - cx) * 180 / Math.PI
+    let a = Math.atan2(clientY - cy, clientX - cx) * 180 / Math.PI
     a = Math.round(a)
     if (a < 0) a += 360
-    onChange(a)
-  }, [onChange])
-
-  const handleMouseUp = useCallback(() => {
-    dragging.current = false
-    window.removeEventListener('mousemove', handleMouseMove)
-    window.removeEventListener('mouseup', handleMouseUp)
-  }, [handleMouseMove])
+    onAngleChange(a)
+  }, [onAngleChange])
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
     dragging.current = true
-    window.addEventListener('mousemove', handleMouseMove)
-    window.addEventListener('mouseup', handleMouseUp)
-  }, [handleMouseMove, handleMouseUp])
+
+    const onMove = (ev: MouseEvent) => {
+      if (!dragging.current) return
+      handleInteraction(ev.clientX, ev.clientY)
+    }
+    const onUp = () => {
+      dragging.current = false
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }, [handleInteraction])
 
   const center = size / 2
   const r = size / 2 - 8

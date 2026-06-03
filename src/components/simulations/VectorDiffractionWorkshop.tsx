@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useRef, useCallback, useEffect } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 
 /* ─── 2D FFT Implementation (Cooley-Tukey) ─── */
 function fft1d(re: Float64Array, im: Float64Array, invert: boolean) {
@@ -350,8 +350,6 @@ export default function VectorDiffractionWorkshop({ onBack }: { onBack: () => vo
   const [numSlits, setNumSlits] = useState(5)
   const [innerRadius, setInnerRadius] = useState(12)
   const [colormap, setColormap] = useState<ColormapType>('grayscale')
-  const [isComputing, setIsComputing] = useState(false)
-  const [computedIntensity, setComputedIntensity] = useState<Float64Array | null>(null)
 
   const N = FFT_SIZE
 
@@ -369,21 +367,12 @@ export default function VectorDiffractionWorkshop({ onBack }: { onBack: () => vo
     }, N)
   }, [apertureType, radius, sqWidth, sqHeight, slitWidth, slitSep, numSlits, innerRadius, N])
 
-  // Compute diffraction on button click or parameter change
-  const compute = useCallback(() => {
-    setIsComputing(true)
-    // Use setTimeout to let UI update
-    setTimeout(() => {
-      const result = computeDiffraction(aperture, N)
-      setComputedIntensity(result)
-      setIsComputing(false)
-    }, 10)
+  // Compute diffraction on parameter change via useMemo
+  const computedIntensity = useMemo(() => {
+    return computeDiffraction(aperture, N)
   }, [aperture, N])
 
-  // Auto-compute on first load and parameter changes
-  useEffect(() => {
-    compute()
-  }, [compute])
+  const isComputing = false
 
   const displaySize = 280
 

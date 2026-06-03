@@ -3,7 +3,6 @@
 import { useState, useCallback } from 'react'
 import dynamic from 'next/dynamic'
 
-// Dynamic imports to avoid loading simulation code until needed
 const JonesPolarizationLab = dynamic(
   () => import('@/components/simulations/JonesPolarizationLab'),
   { ssr: false }
@@ -12,15 +11,29 @@ const VectorDiffractionWorkshop = dynamic(
   () => import('@/components/simulations/VectorDiffractionWorkshop'),
   { ssr: false }
 )
+const PolarimeterExperiment = dynamic(
+  () => import('@/components/simulations/PolarimeterExperiment'),
+  { ssr: false }
+)
+const LiquidCrystalValve = dynamic(
+  () => import('@/components/simulations/LiquidCrystalValve'),
+  { ssr: false }
+)
+const PolarizationScanner = dynamic(
+  () => import('@/components/simulations/PolarizationScanner'),
+  { ssr: false }
+)
 
-/* ─── View State ─── */
 type ViewId =
   | 'home'
   | 'physical-hub'
   | 'physical-jones'
   | 'physical-diffraction'
+  | 'physical-polarimeter'
+  | 'physical-lcvalve'
+  | 'physical-scanner'
 
-/* ─── SVG Icon: Geometric Optics ─── */
+/* ─── SVG Icons ─── */
 function GeometricOpticsIcon() {
   return (
     <svg width="200" height="140" viewBox="0 0 200 140" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -44,7 +57,6 @@ function GeometricOpticsIcon() {
   )
 }
 
-/* ─── SVG Icon: Physical Optics ─── */
 function PhysicalOpticsIcon() {
   return (
     <svg width="200" height="140" viewBox="0 0 200 140" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -79,7 +91,6 @@ function PhysicalOpticsIcon() {
   )
 }
 
-/* ─── SVG Icon: Modern Optics ─── */
 function ModernOpticsIcon() {
   return (
     <svg width="200" height="140" viewBox="0 0 200 140" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -113,30 +124,21 @@ function ModernOpticsIcon() {
   )
 }
 
-/* ─── Landing Card Data ─── */
+/* ─── Card Data ─── */
 const cards = [
   { id: 'geometric' as const, title: '几何光学', description: '光线追迹、透镜成像、棱镜分光、光纤传光', icon: GeometricOpticsIcon },
   { id: 'physical' as const, title: '物理光学', description: '干涉、衍射、偏振、旋光、波前再现', icon: PhysicalOpticsIcon },
   { id: 'modern' as const, title: '现代光学', description: '激光传输、空间滤波、光纤模式、量子光学基础', icon: ModernOpticsIcon },
 ]
 
-/* ─── Sub-module entries for Physical Optics ─── */
-const physicalSubModules = [
-  {
-    id: 'physical-jones' as ViewId,
-    title: '偏振琼斯矩阵实验室',
-    description: '自由组合偏振片、半波片、1/4波片，旋转元件角度，动态绘制偏振椭圆，追踪琼斯矩阵与斯托克斯参数',
-    iconText: 'J',
-  },
-  {
-    id: 'physical-diffraction' as ViewId,
-    title: '全波前矢量衍射工坊',
-    description: '选择口径类型与尺寸，2D FFT矢量衍射积分，即时生成菲涅耳与夫琅禾费衍射强度图',
-    iconText: 'D',
-  },
+const physicalSubModules: { id: ViewId; title: string; description: string; iconText: string }[] = [
+  { id: 'physical-jones', title: '偏振琼斯矩阵实验室', description: '自由组合偏振片、半波片、1/4波片，旋转角度，动态绘制偏振椭圆，追踪琼斯矩阵与斯托克斯参数', iconText: 'J' },
+  { id: 'physical-diffraction', title: '全波前矢量衍射工坊', description: '选择口径类型与尺寸，2D FFT矢量衍射积分，即时生成菲涅耳与夫琅禾费衍射强度图', iconText: 'D' },
+  { id: 'physical-polarimeter', title: '旋光仪实验', description: '虚拟经典旋光仪，零位法测旋光度，钠灯光源→起偏器→样品管→检偏器→探测器，预设葡萄糖、蔗糖等', iconText: 'α' },
+  { id: 'physical-scanner', title: '偏振视觉扫描仪', description: '调用摄像头，实时提取应力双折射，伪彩色应力光学标准配色，如偏光显微镜视场', iconText: '◎' },
+  { id: 'physical-lcvalve', title: '液晶旋光光阀实验台', description: '电压控制液晶旋光，常白/常黑切换，I-V曲线，RGB子像素演示，分子倾斜角可视化', iconText: 'LC' },
 ]
 
-/* ─── Common styles ─── */
 const FONT = 'var(--font-ibm-plex-sans), system-ui, sans-serif'
 
 /* ─── Main Page ─── */
@@ -169,22 +171,22 @@ export default function Home() {
 
   /* ─── Sub-module views ─── */
   if (currentView === 'physical-jones') {
-    return (
-      <div className={`min-h-screen flex flex-col ${fadeIn ? 'page-fade-in' : ''}`} style={{ background: '#FFFFFF' }}>
-        <JonesPolarizationLab onBack={goHome} />
-      </div>
-    )
+    return <div className={`min-h-screen flex flex-col ${fadeIn ? 'page-fade-in' : ''}`} style={{ background: '#FFFFFF' }}><JonesPolarizationLab onBack={goHome} /></div>
   }
-
   if (currentView === 'physical-diffraction') {
-    return (
-      <div className={`min-h-screen flex flex-col ${fadeIn ? 'page-fade-in' : ''}`} style={{ background: '#FFFFFF' }}>
-        <VectorDiffractionWorkshop onBack={goHome} />
-      </div>
-    )
+    return <div className={`min-h-screen flex flex-col ${fadeIn ? 'page-fade-in' : ''}`} style={{ background: '#FFFFFF' }}><VectorDiffractionWorkshop onBack={goHome} /></div>
+  }
+  if (currentView === 'physical-polarimeter') {
+    return <div className={`min-h-screen flex flex-col ${fadeIn ? 'page-fade-in' : ''}`} style={{ background: '#FFFFFF' }}><PolarimeterExperiment onBack={goHome} /></div>
+  }
+  if (currentView === 'physical-lcvalve') {
+    return <div className={`min-h-screen flex flex-col ${fadeIn ? 'page-fade-in' : ''}`} style={{ background: '#FFFFFF' }}><LiquidCrystalValve onBack={goHome} /></div>
+  }
+  if (currentView === 'physical-scanner') {
+    return <div className={`min-h-screen flex flex-col ${fadeIn ? 'page-fade-in' : ''}`} style={{ background: '#FFFFFF' }}><PolarizationScanner onBack={goHome} /></div>
   }
 
-  /* ─── Physical Optics sub-module selection hub ─── */
+  /* ─── Physical Optics hub ─── */
   if (currentView === 'physical-hub') {
     return (
       <div className={`min-h-screen flex flex-col ${fadeIn ? 'page-fade-in' : ''} ${fadeOut ? 'page-fade-out' : ''}`} style={{ background: '#FFFFFF' }}>
@@ -202,79 +204,53 @@ export default function Home() {
             ← 返回
           </button>
           <span style={{ margin: '0 12px', color: '#D0D0D0' }}>|</span>
-          <h1 style={{ fontFamily: FONT, fontSize: '20px', fontWeight: 600, color: '#1A1A1A', margin: 0 }}>
-            物理光学
-          </h1>
+          <h1 style={{ fontFamily: FONT, fontSize: '20px', fontWeight: 600, color: '#1A1A1A', margin: 0 }}>物理光学</h1>
         </header>
 
-        <main className="flex-1 dot-grid flex items-center justify-center" style={{ padding: '40px 24px' }}>
-          <div className="flex items-start justify-center gap-10 flex-wrap" style={{ maxWidth: '760px' }}>
-            {physicalSubModules.map((sub) => {
+        <main className="flex-1 dot-grid flex items-center justify-center" style={{ padding: '32px 24px' }}>
+          <div className="flex items-start justify-center gap-6 flex-wrap" style={{ maxWidth: '860px' }}>
+            {physicalSubModules.map((sub, idx) => {
               const isHovered = hoveredCard === sub.id
               const isPressed = pressedCard === sub.id
               return (
-                <div
-                  key={sub.id}
-                  className="optics-card card-entrance"
-                  role="button"
-                  tabIndex={0}
-                  aria-label={`进入${sub.title}`}
+                <div key={sub.id} className={`optics-card card-entrance${idx > 0 ? '-delay-' + Math.min(idx, 2) : ''}`}
+                  role="button" tabIndex={0} aria-label={`进入${sub.title}`}
                   onMouseEnter={() => setHoveredCard(sub.id)}
                   onMouseLeave={() => { setHoveredCard(null); setPressedCard(null) }}
                   onMouseDown={() => setPressedCard(sub.id)}
                   onMouseUp={() => setPressedCard(null)}
                   onClick={() => navigateTo(sub.id)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigateTo(sub.id) }
-                  }}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigateTo(sub.id) } }}
                   style={{
-                    width: '320px', minHeight: '240px',
+                    width: '240px', minHeight: '210px',
                     backgroundColor: isPressed ? '#E6E9EC' : isHovered ? '#F0F3F6' : '#FAFAFA',
                     border: `1px solid ${isHovered ? '#333333' : '#D0D0D0'}`,
                     borderRadius: '2px', cursor: 'pointer',
-                    transition: isPressed
-                      ? 'transform 100ms ease-out, background-color 100ms ease-out, border-color 200ms ease-out'
-                      : 'background-color 200ms ease-out, border-color 200ms ease-out',
+                    transition: isPressed ? 'transform 100ms ease-out, background-color 100ms ease-out, border-color 200ms ease-out' : 'background-color 200ms ease-out, border-color 200ms ease-out',
                     transform: isPressed ? 'scale(0.97)' : 'scale(1)',
                     display: 'flex', flexDirection: 'column', alignItems: 'center',
-                    padding: '36px 28px', userSelect: 'none',
+                    padding: '28px 20px', userSelect: 'none',
                   }}
                 >
-                  {/* Icon circle */}
                   <div style={{
-                    width: '64px', height: '64px', borderRadius: '50%',
+                    width: '52px', height: '52px', borderRadius: '50%',
                     border: '1.5px solid #333333', display: 'flex',
                     alignItems: 'center', justifyContent: 'center',
-                    fontSize: '24px', fontWeight: 600, color: '#333333',
-                    fontFamily: FONT, marginBottom: '20px',
+                    fontSize: sub.iconText.length > 1 ? '14px' : '20px', fontWeight: 600, color: '#333333',
+                    fontFamily: FONT, marginBottom: '14px',
                   }}>
                     {sub.iconText}
                   </div>
-                  <h2 style={{
-                    fontFamily: FONT, fontSize: '18px', fontWeight: 600, color: '#1A1A1A',
-                    margin: '0 0 10px 0', textAlign: 'center',
-                  }}>
-                    {sub.title}
-                  </h2>
-                  <p style={{
-                    fontFamily: FONT, fontSize: '12px', fontWeight: 400, color: '#666666',
-                    margin: 0, textAlign: 'center', lineHeight: '1.6',
-                  }}>
-                    {sub.description}
-                  </p>
+                  <h2 style={{ fontFamily: FONT, fontSize: '14px', fontWeight: 600, color: '#1A1A1A', margin: '0 0 8px 0', textAlign: 'center' }}>{sub.title}</h2>
+                  <p style={{ fontFamily: FONT, fontSize: '11px', fontWeight: 400, color: '#666666', margin: 0, textAlign: 'center', lineHeight: '1.5' }}>{sub.description}</p>
                 </div>
               )
             })}
           </div>
         </main>
 
-        <footer className="flex-shrink-0 flex items-center mt-auto" style={{
-          height: '24px', backgroundColor: '#FFFFFF',
-          borderTop: '1px solid #CCCCCC', paddingLeft: '24px',
-        }}>
-          <span style={{ fontFamily: FONT, fontSize: '10px', fontWeight: 400, color: '#888888' }} className="tabular-nums">
-            v1.0 · 物理光学模块
-          </span>
+        <footer className="flex-shrink-0 flex items-center mt-auto" style={{ height: '24px', backgroundColor: '#FFFFFF', borderTop: '1px solid #CCCCCC', paddingLeft: '24px' }}>
+          <span style={{ fontFamily: FONT, fontSize: '10px', fontWeight: 400, color: '#888888' }} className="tabular-nums">v1.0 · 物理光学模块</span>
         </footer>
       </div>
     )
@@ -282,20 +258,9 @@ export default function Home() {
 
   /* ─── Home Landing Page ─── */
   return (
-    <div
-      className={`min-h-screen flex flex-col ${fadeOut ? 'page-fade-out' : ''}`}
-      style={{ background: '#FFFFFF' }}
-    >
-      <header className="flex-shrink-0 flex items-center" style={{
-        height: '48px', backgroundColor: '#FFFFFF',
-        borderBottom: '1px solid #CCCCCC', paddingLeft: '24px',
-      }}>
-        <h1 style={{
-          fontFamily: FONT, fontSize: '20px', fontWeight: 600, color: '#1A1A1A',
-          margin: 0, letterSpacing: '-0.01em',
-        }}>
-          光学仿真实验平台
-        </h1>
+    <div className={`min-h-screen flex flex-col ${fadeOut ? 'page-fade-out' : ''}`} style={{ background: '#FFFFFF' }}>
+      <header className="flex-shrink-0 flex items-center" style={{ height: '48px', backgroundColor: '#FFFFFF', borderBottom: '1px solid #CCCCCC', paddingLeft: '24px' }}>
+        <h1 style={{ fontFamily: FONT, fontSize: '20px', fontWeight: 600, color: '#1A1A1A', margin: 0, letterSpacing: '-0.01em' }}>光学仿真实验平台</h1>
       </header>
 
       <main className="flex-1 dot-grid flex items-center justify-center" style={{ padding: '40px 24px' }}>
@@ -304,75 +269,37 @@ export default function Home() {
             const IconComponent = card.icon
             const isHovered = hoveredCard === card.id
             const isPressed = pressedCard === card.id
-
             return (
-              <div
-                key={card.id}
-                className={`optics-card card-entrance${index === 1 ? '-delay-1' : index === 2 ? '-delay-2' : ''}`}
-                role="button"
-                tabIndex={0}
-                aria-label={`进入${card.title}模块`}
+              <div key={card.id} className={`optics-card card-entrance${index === 1 ? '-delay-1' : index === 2 ? '-delay-2' : ''}`}
+                role="button" tabIndex={0} aria-label={`进入${card.title}模块`}
                 onMouseEnter={() => setHoveredCard(card.id)}
                 onMouseLeave={() => { setHoveredCard(null); setPressedCard(null) }}
                 onMouseDown={() => setPressedCard(card.id)}
                 onMouseUp={() => setPressedCard(null)}
-                onClick={() => {
-                  if (card.id === 'physical') {
-                    navigateTo('physical-hub')
-                  }
-                  // geometric and modern: future modules
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault()
-                    if (card.id === 'physical') {
-                      navigateTo('physical-hub')
-                    }
-                  }
-                }}
+                onClick={() => { if (card.id === 'physical') navigateTo('physical-hub') }}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (card.id === 'physical') navigateTo('physical-hub') } }}
                 style={{
                   width: '280px', height: '360px',
                   backgroundColor: isPressed ? '#E6E9EC' : isHovered ? '#F0F3F6' : '#FAFAFA',
                   border: `1px solid ${isHovered ? '#333333' : '#D0D0D0'}`,
                   borderRadius: '2px', cursor: 'pointer',
-                  transition: isPressed
-                    ? 'transform 100ms ease-out, background-color 100ms ease-out, border-color 200ms ease-out'
-                    : 'background-color 200ms ease-out, border-color 200ms ease-out',
+                  transition: isPressed ? 'transform 100ms ease-out, background-color 100ms ease-out, border-color 200ms ease-out' : 'background-color 200ms ease-out, border-color 200ms ease-out',
                   transform: isPressed ? 'scale(0.97)' : 'scale(1)',
                   display: 'flex', flexDirection: 'column', alignItems: 'center',
                   paddingTop: '40px', userSelect: 'none',
                 }}
               >
-                <div style={{ height: '160px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <IconComponent />
-                </div>
-                <h2 style={{
-                  fontFamily: FONT, fontSize: '18px', fontWeight: 600, color: '#1A1A1A',
-                  margin: '24px 0 0 0', textAlign: 'center',
-                }}>
-                  {card.title}
-                </h2>
-                <p style={{
-                  fontFamily: FONT, fontSize: '12px', fontWeight: 400, color: '#666666',
-                  margin: '8px 0 0 0', textAlign: 'center', lineHeight: '1.6',
-                  padding: '0 24px', display: '-webkit-box',
-                  WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
-                }}>
-                  {card.description}
-                </p>
+                <div style={{ height: '160px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><IconComponent /></div>
+                <h2 style={{ fontFamily: FONT, fontSize: '18px', fontWeight: 600, color: '#1A1A1A', margin: '24px 0 0 0', textAlign: 'center' }}>{card.title}</h2>
+                <p style={{ fontFamily: FONT, fontSize: '12px', fontWeight: 400, color: '#666666', margin: '8px 0 0 0', textAlign: 'center', lineHeight: '1.6', padding: '0 24px', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{card.description}</p>
               </div>
             )
           })}
         </div>
       </main>
 
-      <footer className="flex-shrink-0 flex items-center mt-auto" style={{
-        height: '24px', backgroundColor: '#FFFFFF',
-        borderTop: '1px solid #CCCCCC', paddingLeft: '24px',
-      }}>
-        <span style={{ fontFamily: FONT, fontSize: '10px', fontWeight: 400, color: '#888888' }} className="tabular-nums">
-          v1.0 · 高斯光束追踪 | 矢量衍射仿真 | 偏振琼斯分析
-        </span>
+      <footer className="flex-shrink-0 flex items-center mt-auto" style={{ height: '24px', backgroundColor: '#FFFFFF', borderTop: '1px solid #CCCCCC', paddingLeft: '24px' }}>
+        <span style={{ fontFamily: FONT, fontSize: '10px', fontWeight: 400, color: '#888888' }} className="tabular-nums">v1.0 · 高斯光束追踪 | 矢量衍射仿真 | 偏振琼斯分析</span>
       </footer>
     </div>
   )
