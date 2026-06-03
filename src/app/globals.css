@@ -135,6 +135,20 @@
   animation: page-fade-out 200ms ease-out forwards;
 }
 
+/* Fade in for page transition */
+@keyframes page-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.page-fade-in {
+  animation: page-fade-in 300ms ease-out forwards;
+}
+
 /* Hover micro-animation for SVG elements */
 .optics-card:hover .icon-geometric-focus {
   transform: translateX(3px);
