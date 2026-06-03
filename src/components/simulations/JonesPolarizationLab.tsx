@@ -1,846 +1,1379 @@
-'use client'
+"use client";
 
-import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { Canvas } from "@react-three/fiber";
+import { OrbitControls, Line, Text } from "@react-three/drei";
+import * as THREE from "three";
+import { Slider } from "@/components/ui/slider";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  propagateThroughChain,
+  propagateThroughChainStepByStep,
+  analyzePolarization,
+  polarizationEllipsePoints,
+  getElementMatrix,
+  stokesFromJones,
+  degreeOfPolarization,
+  HLP,
+  VLP,
+  LP45,
+  LPn45,
+  RCP,
+  LCP,
+  type ElementType,
+  type OpticalElement,
+  type JonesVector,
+  type PropagationStep,
+  ELEMENT_INFO,
+  cAbs,
+} from "@/lib/optics/jones-matrix";
 
-/* ─── Complex number utilities ─── */
-interface Complex { re: number; im: number }
-const c = (re: number, im: number = 0): Complex => ({ re, im })
-const cMul = (a: Complex, b: Complex): Complex => ({
-  re: a.re * b.re - a.im * b.im,
-  im: a.re * b.im + a.im * b.re,
-})
-const cAdd = (a: Complex, b: Complex): Complex => ({
-  re: a.re + b.re,
-  im: a.im + b.im,
-})
-const cAbs2 = (a: Complex): number => a.re * a.re + a.im * a.im
-const cArg = (a: Complex): number => Math.atan2(a.im, a.re)
+// ─── Type alias for a full Jones vector (Ex, Ey each complex) ───────
+type JonesVec2 = [JonesVector, JonesVector];
 
-/* ─── 2x2 Complex Matrix ─── */
-interface Mat2x2 { a: Complex; b: Complex; c: Complex; d: Complex }
-const matMul = (m1: Mat2x2, m2: Mat2x2): Mat2x2 => ({
-  a: cAdd(cMul(m1.a, m2.a), cMul(m1.b, m2.c)),
-  b: cAdd(cMul(m1.a, m2.b), cMul(m1.b, m2.d)),
-  c: cAdd(cMul(m1.c, m2.a), cMul(m1.d, m2.c)),
-  d: cAdd(cMul(m1.c, m2.b), cMul(m1.d, m2.d)),
-})
-const matVec = (m: Mat2x2, v: [Complex, Complex]): [Complex, Complex] => [
-  cAdd(cMul(m.a, v[0]), cMul(m.b, v[1])),
-  cAdd(cMul(m.c, v[0]), cMul(m.d, v[1])),
-]
-const identityMat = (): Mat2x2 => ({ a: c(1), b: c(0), c: c(0), d: c(1) })
+// ─── Input state presets ────────────────────────────────────────────
+const INPUT_STATES: Record<string, { label: string; jones: JonesVec2 }> = {
+  HLP: { label: "水平线偏振", jones: HLP },
+  VLP: { label: "垂直线偏振", jones: VLP },
+  LP45: { label: "45°线偏振", jones: LP45 },
+  LPn45: { label: "-45°线偏振", jones: LPn45 },
+  RCP: { label: "右旋圆偏振", jones: RCP },
+  LCP: { label: "左旋圆偏振", jones: LCP },
+};
 
-/* ─── Element Types ─── */
-type ElementType = 'polarizer' | 'halfwave' | 'quarterwave'
+// Characteristic states on Poincaré sphere with colors
+const POINCARE_STATES: { key: string; label: string; s: [number, number, number]; color: string }[] = [
+  { key: "H", label: "H", s: [1, 0, 0], color: "#cc4444" },
+  { key: "V", label: "V", s: [-1, 0, 0], color: "#8844cc" },
+  { key: "+45", label: "+45°", s: [0, 1, 0], color: "#44aa44" },
+  { key: "-45", label: "-45°", s: [0, -1, 0], color: "#aa8844" },
+  { key: "RCP", label: "RCP", s: [0, 0, 1], color: "#4488aa" },
+  { key: "LCP", label: "LCP", s: [0, 0, -1], color: "#cc8844" },
+];
 
-interface OpticalElement {
-  id: string
-  type: ElementType
-  angle: number // degrees
+// ─── Helper: format complex number ─────────────────────────────────
+function fmtComplex(c: [number, number], precision = 2): string {
+  const [re, im] = c;
+  if (Math.abs(im) < 1e-6) return re.toFixed(precision);
+  if (Math.abs(re) < 1e-6) return `${im.toFixed(precision)}i`;
+  const sign = im >= 0 ? "+" : "-";
+  return `${re.toFixed(precision)}${sign}${Math.abs(im).toFixed(precision)}i`;
 }
 
-const ELEMENT_LABELS: Record<ElementType, string> = {
-  polarizer: '偏振片',
-  halfwave: '半波片',
-  quarterwave: '1/4波片',
+// ─── Helper: get polarization type name ────────────────────────────
+function getPolTypeName(chi: number, handedness: number): string {
+  if (Math.abs(chi) < 0.05) return "线偏振";
+  if (Math.abs(Math.abs(chi) - Math.PI / 4) < 0.05)
+    return `${handedness > 0 ? "右" : "左"}旋圆偏振`;
+  return `${handedness > 0 ? "右" : "左"}旋椭圆偏振`;
 }
 
-/* ─── Jones Matrix for element at angle θ ─── */
-function jonesMatrix(type: ElementType, angleDeg: number): Mat2x2 {
-  const θ = (angleDeg * Math.PI) / 180
-  const cosθ = Math.cos(θ)
-  const sinθ = Math.sin(θ)
-
-  // Rotation matrix R(θ)
-  const R: Mat2x2 = { a: c(cosθ), b: c(sinθ), c: c(-sinθ), d: c(cosθ) }
-  // Inverse rotation R(-θ)
-  const Ri: Mat2x2 = { a: c(cosθ), b: c(-sinθ), c: c(sinθ), d: c(cosθ) }
-
-  // Element matrix in its own frame
-  let M: Mat2x2
-  switch (type) {
-    case 'polarizer':
-      M = { a: c(1), b: c(0), c: c(0), d: c(0) }
-      break
-    case 'halfwave':
-      M = { a: c(1), b: c(0), c: c(0), d: c(-1) }
-      break
-    case 'quarterwave':
-      M = { a: c(1), b: c(0), c: c(0), d: c(0, -1) }
-      break
-    default:
-      M = identityMat()
-  }
-
-  // R(-θ) * M * R(θ)
-  return matMul(Ri, matMul(M, R))
-}
-
-/* ─── Stokes parameters from Jones vector ─── */
-function jonesToStokes(jv: [Complex, Complex]): [number, number, number, number] {
-  const Ex = jv[0]
-  const Ey = jv[1]
-  const S0 = cAbs2(Ex) + cAbs2(Ey)
-  const S1 = cAbs2(Ex) - cAbs2(Ey)
-  const S2 = 2 * (Ex.re * Ey.re + Ex.im * Ey.im)
-  const S3 = 2 * (Ex.re * Ey.im - Ex.im * Ey.re)
-  return [S0, S1, S2, S3]
-}
-
-/* ─── Polarization ellipse parameters ─── */
-function polarizationEllipse(jv: [Complex, Complex]) {
-  const [S0, S1, S2, S3] = jonesToStokes(jv)
-  if (S0 < 1e-12) return { a: 0, b: 0, ψ: 0, χ: 0, handedness: 'right' as const, intensity: 0 }
-
-  const DOP = Math.sqrt(S1 * S1 + S2 * S2 + S3 * S3) / S0
-  const ψ = 0.5 * Math.atan2(S2, S1) // orientation angle
-  const χ = 0.5 * Math.asin(Math.max(-1, Math.min(1, S3 / (S0 * DOP + 1e-15)))) // ellipticity angle
-  const a = Math.sqrt(S0) * Math.sqrt(1 + Math.cos(2 * χ)) / Math.SQRT2
-  const b = Math.sqrt(S0) * Math.sqrt(1 - Math.cos(2 * χ)) / Math.SQRT2
-  const handedness: 'right' | 'left' = S3 > 0 ? 'right' : 'left'
-
-  return { a, b, ψ, χ, handedness, intensity: S0 }
-}
-
-/* ─── Input polarization presets ─── */
-type InputPreset = 'horizontal' | 'vertical' | '45deg' | 'circularR' | 'circularL'
-
-const INPUT_PRESETS: Record<InputPreset, { label: string; jones: [Complex, Complex] }> = {
-  horizontal: { label: '水平线偏振', jones: [c(1), c(0)] },
-  vertical: { label: '垂直线偏振', jones: [c(0), c(1)] },
-  '45deg': { label: '45°线偏振', jones: [c(1 / Math.SQRT2), c(1 / Math.SQRT2)] },
-  circularR: { label: '右旋圆偏振', jones: [c(1 / Math.SQRT2), c(0, 1 / Math.SQRT2)] },
-  circularL: { label: '左旋圆偏振', jones: [c(1 / Math.SQRT2), c(0, -1 / Math.SQRT2)] },
-}
-
-/* ─── Polarization Ellipse SVG ─── */
-function PolarizationEllipseSVG({
-  jonesVector,
-  size,
-  label,
-  showGrid = true,
+// ─── Poincaré Sphere 3D ───────────────────────────────────────────
+function PoincareSphere({
+  inputStokes,
+  outputStokes,
+  chainSteps,
+  animTime,
 }: {
-  jonesVector: [Complex, Complex]
-  size: number
-  label: string
-  showGrid?: boolean
+  inputStokes: [number, number, number, number];
+  outputStokes: [number, number, number, number];
+  chainSteps: PropagationStep[];
+  animTime: number;
 }) {
-  const ellipse = useMemo(() => polarizationEllipse(jonesVector), [jonesVector])
-  const center = size / 2
-  const scale = (size / 2 - 16)
-  const maxVal = Math.max(ellipse.a, 0.001)
+  const R = 1.5;
+  const meshRef = useRef<THREE.Mesh>(null);
 
-  // Generate ellipse path points
-  const ellipsePoints = useMemo(() => {
-    if (ellipse.intensity < 1e-10) return ''
-    const points: string[] = []
-    const steps = 120
-    const sign = ellipse.handedness === 'right' ? 1 : -1
-    for (let i = 0; i <= steps; i++) {
-      const t = (2 * Math.PI * i) / steps
-      // Parametric polarization ellipse
-      const Ex = ellipse.a * Math.cos(t)
-      const Ey = ellipse.b * Math.cos(t + sign * Math.PI / 2)
-      // Rotate by ψ
-      const cosψ = Math.cos(ellipse.ψ)
-      const sinψ = Math.sin(ellipse.ψ)
-      const x = center + (Ex * cosψ - Ey * sinψ) / maxVal * scale
-      const y = center - (Ex * sinψ + Ey * cosψ) / maxVal * scale
-      points.push(`${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`)
-    }
-    return points.join(' ')
-  }, [ellipse, center, scale, maxVal])
+  const normStokes = (s: [number, number, number, number]): [number, number, number] => {
+    const S0 = s[0];
+    if (S0 < 1e-15) return [0, 0, 0];
+    const norm = Math.sqrt(s[1] * s[1] + s[2] * s[2] + s[3] * s[3]);
+    if (norm < 1e-15) return [0, 0, 0];
+    return [(s[1] / S0) * R, (s[2] / S0) * R, (s[3] / S0) * R];
+  };
 
-  // E-field vector arrows at several phases
-  const vectors = useMemo(() => {
-    if (ellipse.intensity < 1e-10) return []
-    const result: { x1: number; y1: number; x2: number; y2: number }[] = []
-    const sign = ellipse.handedness === 'right' ? 1 : -1
-    const cosψ = Math.cos(ellipse.ψ)
-    const sinψ = Math.sin(ellipse.ψ)
-    for (let i = 0; i < 8; i++) {
-      const t = (2 * Math.PI * i) / 8
-      const Ex = ellipse.a * Math.cos(t)
-      const Ey = ellipse.b * Math.cos(t + sign * Math.PI / 2)
-      const x = (Ex * cosψ - Ey * sinψ) / maxVal * scale
-      const y = -(Ex * sinψ + Ey * cosψ) / maxVal * scale
-      result.push({ x1: center, y1: center, x2: center + x, y2: center + y })
-    }
-    return result
-  }, [ellipse, center, scale, maxVal])
+  const inputPt = normStokes(inputStokes);
+  const outputPt = normStokes(outputStokes);
 
-  return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-      {/* Grid */}
-      {showGrid && (
-        <g>
-          {[0.25, 0.5, 0.75].map((f) => (
-            <g key={f}>
-              <line x1={size * f} y1="8" x2={size * f} y2={size - 8} stroke="#E8ECF0" strokeWidth="0.5" />
-              <line x1="8" y1={size * f} x2={size - 8} y2={size * f} stroke="#E8ECF0" strokeWidth="0.5" />
-            </g>
-          ))}
-          {/* Axes */}
-          <line x1={center} y1="8" x2={center} y2={size - 8} stroke="#CCCCCC" strokeWidth="0.8" />
-          <line x1="8" y1={center} x2={size - 8} y2={center} stroke="#CCCCCC" strokeWidth="0.8" />
-          {/* Axis labels */}
-          <text x={size - 14} y={center - 4} fontSize="8" fill="#888888" fontFamily="var(--font-ibm-plex-sans), system-ui">Eₓ</text>
-          <text x={center + 4} y={14} fontSize="8" fill="#888888" fontFamily="var(--font-ibm-plex-sans), system-ui">Eᵧ</text>
-        </g>
-      )}
-      {/* E-field vectors */}
-      {vectors.map((v, i) => (
-        <line key={i} x1={v.x1} y1={v.y1} x2={v.x2} y2={v.y2}
-          stroke="#1A1A1A" strokeWidth="0.6" opacity={0.3 + 0.15 * (i % 3)}
-        />
-      ))}
-      {/* Polarization ellipse */}
-      {ellipsePoints && (
-        <path d={ellipsePoints} fill="none" stroke="#1A1A1A" strokeWidth="1.5" />
-      )}
-      {/* Label */}
-      <text x={center} y={size - 2} textAnchor="middle" fontSize="9" fill="#555555"
-        fontFamily="var(--font-ibm-plex-sans), system-ui, sans-serif"
-      >
-        {label}
-      </text>
-    </svg>
-  )
-}
-
-/* ─── Element SVG Icon ─── */
-function ElementIcon({ type, angle, size = 60 }: { type: ElementType; angle: number; size?: number }) {
-  const cx = size / 2
-  const cy = size / 2
-  const r = size / 2 - 4
-
-  // Hatch lines for wave plates
-  const hatchLines = useMemo(() => {
-    if (type === 'polarizer') return null
-    const lines: JSX.Element[] = []
-    const spacing = type === 'halfwave' ? 6 : 8
-    for (let i = -r; i <= r; i += spacing) {
-      const x1 = cx + i
-      const y1 = cy - r
-      const x2 = cx + i + r
-      const y2 = cy
-      // Clip to circle
-      const dx = i
-      if (Math.abs(dx) < r) {
-        const halfH = Math.sqrt(r * r - dx * dx)
-        lines.push(
-          <line key={i} x1={cx + i} y1={cy - halfH * 0.6} x2={cx + i} y2={cy + halfH * 0.6}
-            stroke="#333333" strokeWidth="0.5" opacity="0.4"
-          />
-        )
+  // Chain trajectory on Poincaré sphere with great circle interpolation
+  const trajectoryPts = useMemo(() => {
+    if (chainSteps.length < 2) return [];
+    const pts: THREE.Vector3[] = [];
+    for (let i = 0; i < chainSteps.length - 1; i++) {
+      const from = normStokes(chainSteps[i].stokes);
+      const to = normStokes(chainSteps[i + 1].stokes);
+      const fromV = new THREE.Vector3(from[0], from[1], from[2]);
+      const toV = new THREE.Vector3(to[0], to[1], to[2]);
+      const steps = 30;
+      for (let j = 0; j <= steps; j++) {
+        const t = j / steps;
+        const pt = new THREE.Vector3().lerpVectors(fromV, toV, t);
+        const len = pt.length();
+        if (len > 1e-6) pt.normalize().multiplyScalar(R);
+        pts.push(pt);
       }
     }
-    return lines
-  }, [type, cx, cy, r])
+    return pts;
+  }, [chainSteps]);
 
-  // Transmission axis line for polarizer
-  const axisAngle = (angle * Math.PI) / 180
-  const axisLen = r - 2
+  // Sphere wireframe great circles
+  const sphereCircles = useMemo(() => {
+    const circles: THREE.Vector3[][] = [];
+    const segments = 80;
+    for (let k = 0; k < 3; k++) {
+      const pts: THREE.Vector3[] = [];
+      for (let i = 0; i <= segments; i++) {
+        const angle = (2 * Math.PI * i) / segments;
+        let x = 0, y = 0, z = 0;
+        if (k === 0) { x = R * Math.cos(angle); y = R * Math.sin(angle); }
+        else if (k === 1) { x = R * Math.cos(angle); z = R * Math.sin(angle); }
+        else { y = R * Math.cos(angle); z = R * Math.sin(angle); }
+        pts.push(new THREE.Vector3(x, y, z));
+      }
+      circles.push(pts);
+    }
+    return circles;
+  }, []);
+
+  const outputPulse = 0.06 + 0.015 * Math.sin(animTime * 3);
 
   return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-      {/* Circle outline */}
-      <circle cx={cx} cy={cy} r={r} fill="none" stroke="#333333" strokeWidth="1.2" />
-      {/* Hatch for wave plates */}
-      {hatchLines}
-      {/* Transmission axis for polarizer */}
-      {type === 'polarizer' && (
-        <line
-          x1={cx - axisLen * Math.cos(axisAngle)}
-          y1={cy - axisLen * Math.sin(axisAngle)}
-          x2={cx + axisLen * Math.cos(axisAngle)}
-          y2={cy + axisLen * Math.sin(axisAngle)}
-          stroke="#1A1A1A" strokeWidth="1.5"
+    <group>
+      {/* Translucent sphere */}
+      <mesh ref={meshRef}>
+        <sphereGeometry args={[R, 48, 48]} />
+        <meshPhysicalMaterial
+          color="#f0f2f8"
+          transparent
+          opacity={0.08}
+          roughness={0.3}
+          metalness={0.0}
+          side={THREE.FrontSide}
+          depthWrite={false}
+        />
+      </mesh>
+
+      {/* Great circles */}
+      {sphereCircles.map((pts, i) => (
+        <Line key={`gc-${i}`} points={pts} color="#c8ccd4" lineWidth={0.6} transparent opacity={0.35} />
+      ))}
+
+      {/* S1 axis (red) */}
+      <Line
+        points={[new THREE.Vector3(-R * 1.35, 0, 0), new THREE.Vector3(R * 1.35, 0, 0)]}
+        color="#cc4444" lineWidth={1}
+      />
+      <mesh position={[R * 1.35, 0, 0]} rotation={[0, 0, -Math.PI / 2]}>
+        <coneGeometry args={[0.04, 0.1, 8]} />
+        <meshBasicMaterial color="#cc4444" />
+      </mesh>
+      <Text position={[R * 1.5, 0, 0]} fontSize={0.14} color="#cc4444" anchorX="center" anchorY="middle">
+        S₁
+      </Text>
+
+      {/* S2 axis (green) */}
+      <Line
+        points={[new THREE.Vector3(0, -R * 1.35, 0), new THREE.Vector3(0, R * 1.35, 0)]}
+        color="#44aa44" lineWidth={1}
+      />
+      <mesh position={[0, R * 1.35, 0]}>
+        <coneGeometry args={[0.04, 0.1, 8]} />
+        <meshBasicMaterial color="#44aa44" />
+      </mesh>
+      <Text position={[0, R * 1.5, 0]} fontSize={0.14} color="#44aa44" anchorX="center" anchorY="middle">
+        S₂
+      </Text>
+
+      {/* S3 axis (teal) */}
+      <Line
+        points={[new THREE.Vector3(0, 0, -R * 1.35), new THREE.Vector3(0, 0, R * 1.35)]}
+        color="#4488aa" lineWidth={1}
+      />
+      <mesh position={[0, 0, R * 1.35]} rotation={[Math.PI / 2, 0, 0]}>
+        <coneGeometry args={[0.04, 0.1, 8]} />
+        <meshBasicMaterial color="#4488aa" />
+      </mesh>
+      <Text position={[0, 0, R * 1.55]} fontSize={0.14} color="#4488aa" anchorX="center" anchorY="middle">
+        S₃
+      </Text>
+
+      {/* 6 characteristic polarization state markers */}
+      {POINCARE_STATES.map(({ key, label, s, color }) => (
+        <group key={key}>
+          <mesh position={[s[0] * R, s[1] * R, s[2] * R]}>
+            <sphereGeometry args={[0.05, 12, 12]} />
+            <meshBasicMaterial color={color} />
+          </mesh>
+          <mesh position={[s[0] * R, s[1] * R, s[2] * R]}>
+            <ringGeometry args={[0.07, 0.09, 16]} />
+            <meshBasicMaterial color={color} transparent opacity={0.4} side={THREE.DoubleSide} />
+          </mesh>
+          <Text
+            position={[s[0] * R * 1.2, s[1] * R * 1.2, s[2] * R * 1.2]}
+            fontSize={0.1}
+            color={color}
+            anchorX="center"
+            anchorY="middle"
+          >
+            {label}
+          </Text>
+        </group>
+      ))}
+
+      {/* Great circle arcs connecting opposite states */}
+      {[
+        { from: [1, 0, 0], to: [-1, 0, 0], color: "#cc4444" },
+        { from: [0, 1, 0], to: [0, -1, 0], color: "#44aa44" },
+        { from: [0, 0, 1], to: [0, 0, -1], color: "#4488aa" },
+      ].map(({ from, to, color }, idx) => {
+        const arcPts: THREE.Vector3[] = [];
+        const fV = new THREE.Vector3(from[0] * R, from[1] * R, from[2] * R);
+        const tV = new THREE.Vector3(to[0] * R, to[1] * R, to[2] * R);
+        for (let i = 0; i <= 40; i++) {
+          const t = i / 40;
+          const pt = new THREE.Vector3().lerpVectors(fV, tV, t);
+          const len = pt.length();
+          if (len > 1e-6) pt.normalize().multiplyScalar(R);
+          arcPts.push(pt);
+        }
+        return <Line key={`arc-${idx}`} points={arcPts} color={color} lineWidth={0.5} transparent opacity={0.25} />;
+      })}
+
+      {/* Trajectory line */}
+      {trajectoryPts.length > 1 && (
+        <Line points={trajectoryPts} color="#e8a838" lineWidth={2} />
+      )}
+
+      {/* Input state point (teal) */}
+      <mesh position={[inputPt[0], inputPt[1], inputPt[2]]}>
+        <sphereGeometry args={[0.07, 16, 16]} />
+        <meshBasicMaterial color="#4488aa" />
+      </mesh>
+      <Text position={[inputPt[0] * 1.15, inputPt[1] * 1.15, inputPt[2] * 1.15]} fontSize={0.08} color="#4488aa" anchorX="center">
+        入射
+      </Text>
+
+      {/* Output state point (red, pulsing) */}
+      <mesh position={[outputPt[0], outputPt[1], outputPt[2]]}>
+        <sphereGeometry args={[outputPulse, 16, 16]} />
+        <meshBasicMaterial color="#cc4444" />
+      </mesh>
+      <mesh position={[outputPt[0], outputPt[1], outputPt[2]]}>
+        <ringGeometry args={[outputPulse + 0.02, outputPulse + 0.05, 24]} />
+        <meshBasicMaterial color="#cc4444" transparent opacity={0.3 + 0.1 * Math.sin(animTime * 3)} side={THREE.DoubleSide} />
+      </mesh>
+      <Text position={[outputPt[0] * 1.15, outputPt[1] * 1.15, outputPt[2] * 1.15]} fontSize={0.08} color="#cc4444" anchorX="center">
+        出射
+      </Text>
+
+      {/* Intermediate step markers */}
+      {chainSteps.slice(1, -1).map((step, i) => {
+        const [sx, sy, sz] = normStokes(step.stokes);
+        return (
+          <group key={`step-${i}`}>
+            <mesh position={[sx, sy, sz]}>
+              <sphereGeometry args={[0.04, 10, 10]} />
+              <meshBasicMaterial color="#e8a838" />
+            </mesh>
+            <Text
+              position={[sx * 1.1, sy * 1.1, sz * 1.1]}
+              fontSize={0.07}
+              color="#e8a838"
+              anchorX="center"
+              anchorY="middle"
+            >
+              {`${i + 1}`}
+            </Text>
+          </group>
+        );
+      })}
+
+      {/* Coordinate projection lines from origin to output */}
+      {Math.abs(outputPt[0]) > 0.01 && (
+        <Line
+          points={[new THREE.Vector3(0, 0, 0), new THREE.Vector3(outputPt[0], 0, 0)]}
+          color="#cc4444" lineWidth={0.4} transparent opacity={0.3} dashed dashSize={0.04} gapSize={0.03}
         />
       )}
-      {/* Fast axis indicator for wave plates */}
-      {type !== 'polarizer' && (
-        <>
-          <line
-            x1={cx - axisLen * Math.cos(axisAngle)}
-            y1={cy - axisLen * Math.sin(axisAngle)}
-            x2={cx + axisLen * Math.cos(axisAngle)}
-            y2={cy + axisLen * Math.sin(axisAngle)}
-            stroke="#1A1A1A" strokeWidth="1" strokeDasharray="3,2"
-          />
-          {/* Slow axis perpendicular */}
-          <line
-            x1={cx - axisLen * Math.cos(axisAngle + Math.PI / 2)}
-            y1={cy - axisLen * Math.sin(axisAngle + Math.PI / 2)}
-            x2={cx + axisLen * Math.cos(axisAngle + Math.PI / 2)}
-            y2={cy + axisLen * Math.sin(axisAngle + Math.PI / 2)}
-            stroke="#888888" strokeWidth="0.6" strokeDasharray="1,2"
-          />
-        </>
+      {Math.abs(outputPt[1]) > 0.01 && (
+        <Line
+          points={[new THREE.Vector3(outputPt[0], 0, 0), new THREE.Vector3(outputPt[0], outputPt[1], 0)]}
+          color="#44aa44" lineWidth={0.4} transparent opacity={0.3} dashed dashSize={0.04} gapSize={0.03}
+        />
       )}
-    </svg>
-  )
+      {Math.abs(outputPt[2]) > 0.01 && (
+        <Line
+          points={[new THREE.Vector3(outputPt[0], outputPt[1], 0), new THREE.Vector3(outputPt[0], outputPt[1], outputPt[2])]}
+          color="#4488aa" lineWidth={0.4} transparent opacity={0.3} dashed dashSize={0.04} gapSize={0.03}
+        />
+      )}
+    </group>
+  );
 }
 
-/* ─── Angle Dial ─── */
-function AngleDial({ angle, onChange, size = 64 }: { angle: number; onChange: (a: number) => void; size?: number }) {
-  const svgRef = useRef<SVGSVGElement>(null)
-  const dragging = useRef(false)
+// ─── E-field 3D Helix ──────────────────────────────────────────────
+function EFieldHelix({
+  jones,
+  showEx,
+  showEy,
+  showComposite,
+  animTime,
+  chainSteps,
+}: {
+  jones: JonesVec2;
+  showEx: boolean;
+  showEy: boolean;
+  showComposite: boolean;
+  animTime: number;
+  chainSteps: PropagationStep[];
+}) {
+  const groupRef = useRef<THREE.Group>(null);
 
-  const onAngleChange = onChange
+  const { helixLine, exLine, eyLine, propagationAxis } = useMemo(() => {
+    const [Ex, Ey] = jones;
+    const numPts = 300;
+    const zLen = 5;
+    const scale = 1.2;
 
-  const handleInteraction = useCallback((clientX: number, clientY: number) => {
-    if (!svgRef.current) return
-    const rect = svgRef.current.getBoundingClientRect()
-    const cx = rect.left + rect.width / 2
-    const cy = rect.top + rect.height / 2
-    let a = Math.atan2(clientY - cy, clientX - cx) * 180 / Math.PI
-    a = Math.round(a)
-    if (a < 0) a += 360
-    onAngleChange(a)
-  }, [onAngleChange])
+    const helixPts: THREE.Vector3[] = [];
+    const exPts: THREE.Vector3[] = [];
+    const eyPts: THREE.Vector3[] = [];
 
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault()
-    dragging.current = true
-
-    const onMove = (ev: MouseEvent) => {
-      if (!dragging.current) return
-      handleInteraction(ev.clientX, ev.clientY)
+    for (let i = 0; i <= numPts; i++) {
+      const t = (i / numPts) * zLen;
+      const phase = (i / numPts) * Math.PI * 8;
+      const exVal = scale * (Ex[0] * Math.cos(phase) - Ex[1] * Math.sin(phase));
+      const eyVal = scale * (Ey[0] * Math.cos(phase) - Ey[1] * Math.sin(phase));
+      const z = t - zLen / 2;
+      helixPts.push(new THREE.Vector3(exVal, eyVal, z));
+      exPts.push(new THREE.Vector3(exVal, 0, z));
+      eyPts.push(new THREE.Vector3(0, eyVal, z));
     }
-    const onUp = () => {
-      dragging.current = false
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-    }
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
-  }, [handleInteraction])
 
-  const center = size / 2
-  const r = size / 2 - 8
-  const angleRad = (angle * Math.PI) / 180
+    return {
+      helixLine: helixPts,
+      exLine: exPts,
+      eyLine: eyPts,
+      propagationAxis: [
+        new THREE.Vector3(0, 0, -zLen / 2 - 0.5),
+        new THREE.Vector3(0, 0, zLen / 2 + 0.5),
+      ] as THREE.Vector3[],
+    };
+  }, [jones]);
+
+  // Animated moving tip
+  const movingTipPhase = animTime * 2;
+  const tipZ = ((movingTipPhase % 5) / 5) * 5 - 2.5;
+  const [Ex, Ey] = jones;
+  const scale = 1.2;
+  const tipExVal = scale * (Ex[0] * Math.cos((movingTipPhase * Math.PI * 8) / 5) - Ex[1] * Math.sin((movingTipPhase * Math.PI * 8) / 5));
+  const tipEyVal = scale * (Ey[0] * Math.cos((movingTipPhase * Math.PI * 8) / 5) - Ey[1] * Math.sin((movingTipPhase * Math.PI * 8) / 5));
+
+  // Intermediate chain state markers along z-axis
+  const chainMarkers = useMemo(() => {
+    if (chainSteps.length <= 2) return [];
+    const zLen = 5;
+    const markers: { z: number; jones: JonesVec2; stepIdx: number }[] = [];
+    const innerSteps = chainSteps.slice(1, -1);
+    innerSteps.forEach((step, i) => {
+      const z = -zLen / 2 + ((i + 1) / (chainSteps.length - 1)) * zLen;
+      markers.push({ z, jones: step.jones, stepIdx: i + 1 });
+    });
+    return markers;
+  }, [chainSteps]);
 
   return (
-    <svg ref={svgRef} width={size} height={size} viewBox={`0 0 ${size} ${size}`}
-      onMouseDown={handleMouseDown} style={{ cursor: 'grab' }}
-    >
-      {/* Dial background */}
-      <circle cx={center} cy={center} r={r} fill="#FAFAFA" stroke="#D0D0D0" strokeWidth="0.8" />
-      {/* Tick marks */}
-      {[0, 45, 90, 135, 180, 225, 270, 315].map((deg) => {
-        const rad = (deg * Math.PI) / 180
+    <group ref={groupRef}>
+      {/* Propagation axis */}
+      <Line points={propagationAxis} color="#d4d8e0" lineWidth={0.5} />
+      <Text position={[0, 0, propagationAxis[1].z + 0.25]} fontSize={0.12} color="#6b7280" anchorX="center">
+        z (传播方向)
+      </Text>
+
+      {/* Semi-transparent projection plane for Ex-z */}
+      {showEx && (
+        <mesh position={[0, 0, 0]} rotation={[0, 0, 0]}>
+          <planeGeometry args={[3, 5]} />
+          <meshBasicMaterial color="#cc4444" transparent opacity={0.02} side={THREE.DoubleSide} depthWrite={false} />
+        </mesh>
+      )}
+
+      {/* Ex component */}
+      {showEx && (
+        <Line points={exLine} color="#cc4444" lineWidth={1.2} transparent opacity={0.7} />
+      )}
+
+      {/* Ey component */}
+      {showEy && (
+        <Line points={eyLine} color="#44aa44" lineWidth={1.2} transparent opacity={0.7} />
+      )}
+
+      {/* Composite E vector helix */}
+      {showComposite && (
+        <Line points={helixLine} color="#2d3142" lineWidth={2} />
+      )}
+
+      {/* E vector arrows at intervals */}
+      {showComposite && Array.from({ length: 30 }, (_, i) => {
+        const idx = Math.round((i / 30) * 300);
+        if (idx >= helixLine.length) return null;
+        const pt = helixLine[idx];
         return (
-          <line key={deg}
-            x1={center + (r - 4) * Math.cos(rad)} y1={center + (r - 4) * Math.sin(rad)}
-            x2={center + r * Math.cos(rad)} y2={center + r * Math.sin(rad)}
-            stroke="#888888" strokeWidth="0.6"
+          <Line
+            key={`evec-${i}`}
+            points={[new THREE.Vector3(0, 0, pt.z), pt]}
+            color="#2d3142"
+            lineWidth={0.3}
+            transparent
+            opacity={0.12}
           />
-        )
+        );
       })}
-      {/* Angle indicator line */}
-      <line x1={center} y1={center}
-        x2={center + (r - 6) * Math.cos(angleRad)}
-        y2={center + (r - 6) * Math.sin(angleRad)}
-        stroke="#1A1A1A" strokeWidth="1.5"
-      />
-      {/* Center dot */}
-      <circle cx={center} cy={center} r="2" fill="#1A1A1A" />
-      {/* Angle text */}
-      <text x={center} y={size - 1} textAnchor="middle" fontSize="8" fill="#555555"
-        fontFamily="var(--font-ibm-plex-sans), system-ui, sans-serif"
-        className="tabular-nums"
-      >
-        {angle}°
-      </text>
-    </svg>
-  )
+
+      {/* Moving E-field tip indicator */}
+      {showComposite && (
+        <group>
+          <mesh position={[tipExVal, tipEyVal, tipZ]}>
+            <sphereGeometry args={[0.05, 12, 12]} />
+            <meshBasicMaterial color="#cc4444" />
+          </mesh>
+          <Line
+            points={[new THREE.Vector3(0, 0, tipZ), new THREE.Vector3(tipExVal, tipEyVal, tipZ)]}
+            color="#cc4444"
+            lineWidth={1.5}
+          />
+        </group>
+      )}
+
+      {/* Projection dashed lines from tip to component planes */}
+      {showEx && showComposite && (
+        <Line
+          points={[new THREE.Vector3(tipExVal, 0, tipZ), new THREE.Vector3(tipExVal, tipEyVal, tipZ)]}
+          color="#cc4444" lineWidth={0.5} transparent opacity={0.3} dashed dashSize={0.05} gapSize={0.03}
+        />
+      )}
+      {showEy && showComposite && (
+        <Line
+          points={[new THREE.Vector3(0, tipEyVal, tipZ), new THREE.Vector3(tipExVal, tipEyVal, tipZ)]}
+          color="#44aa44" lineWidth={0.5} transparent opacity={0.3} dashed dashSize={0.05} gapSize={0.03}
+        />
+      )}
+
+      {/* Intermediate chain state markers along z */}
+      {chainMarkers.map(({ z, jones: stepJones, stepIdx }) => {
+        const [sEx, sEy] = stepJones;
+        const sExVal = scale * cAbs(sEx) * 0.5;
+        const sEyVal = scale * cAbs(sEy) * 0.5;
+        return (
+          <group key={`chain-marker-${stepIdx}`}>
+            <mesh position={[0, 0, z]}>
+              <ringGeometry args={[0.01, 0.015, 16]} />
+              <meshBasicMaterial color="#e8a838" transparent opacity={0.5} side={THREE.DoubleSide} />
+            </mesh>
+            {/* Cross-section indicator lines */}
+            <Line
+              points={[new THREE.Vector3(0, 0, z), new THREE.Vector3(sExVal, sEyVal, z)]}
+              color="#e8a838" lineWidth={0.5} transparent opacity={0.4}
+            />
+            <Text position={[0.1, 0.1, z]} fontSize={0.06} color="#e8a838" anchorX="left">
+              {`#${stepIdx}`}
+            </Text>
+          </group>
+        );
+      })}
+
+      {/* Axis labels */}
+      <Text position={[1.6, 0, -2.8]} fontSize={0.1} color="#cc4444" anchorX="center">
+        Ex
+      </Text>
+      <Text position={[0, 1.6, -2.8]} fontSize={0.1} color="#44aa44" anchorX="center">
+        Ey
+      </Text>
+
+      {/* Ex/Ey amplitude indicators at start */}
+      {showEx && (
+        <Line
+          points={[new THREE.Vector3(0, 0, -2.5), new THREE.Vector3(scale * cAbs(Ex), 0, -2.5)]}
+          color="#cc4444" lineWidth={2}
+        />
+      )}
+      {showEy && (
+        <Line
+          points={[new THREE.Vector3(0, 0, -2.5), new THREE.Vector3(0, scale * cAbs(Ey), -2.5)]}
+          color="#44aa44" lineWidth={2}
+        />
+      )}
+    </group>
+  );
 }
 
-/* ─── Main Component ─── */
-export default function JonesPolarizationLab({ onBack }: { onBack: () => void }) {
-  const [elements, setElements] = useState<OpticalElement[]>([
-    { id: 'el-1', type: 'polarizer', angle: 0 },
-    { id: 'el-2', type: 'quarterwave', angle: 45 },
-  ])
-  const [inputPreset, setInputPreset] = useState<InputPreset>('horizontal')
-  const [inputAngle, setInputAngle] = useState(0)
+// ─── Polarization Canvas (2D with animated trail) ──────────────────
+function PolarizationCanvas({
+  polarization,
+  jones,
+  label,
+  size = 240,
+  showVector = true,
+  showTrail = true,
+}: {
+  polarization: ReturnType<typeof analyzePolarization>;
+  jones: JonesVec2;
+  label: string;
+  size?: number;
+  showVector?: boolean;
+  showTrail?: boolean;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const animRef = useRef<number>(0);
+  const phaseRef = useRef(0);
 
-  const inputJones = useMemo((): [Complex, Complex] => {
-    const preset = INPUT_PRESETS[inputPreset]
-    if (inputPreset === 'horizontal' || inputPreset === 'vertical' || inputPreset === '45deg') {
-      // For linear, allow angle adjustment
-      const θ = (inputAngle * Math.PI) / 180
-      return [c(Math.cos(θ)), c(Math.sin(θ))]
-    }
-    return preset.jones
-  }, [inputPreset, inputAngle])
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
 
-  // Compute total Jones matrix
-  const totalMatrix = useMemo(() => {
-    let M = identityMat()
-    for (const el of elements) {
-      M = matMul(jonesMatrix(el.type, el.angle), M)
-    }
-    return M
-  }, [elements])
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = size * dpr;
+    canvas.height = size * dpr;
 
-  // Compute output Jones vector
-  const outputJones = useMemo(() => matVec(totalMatrix, inputJones), [totalMatrix, inputJones])
+    let running = true;
+    phaseRef.current = 0;
 
-  // Compute intermediate Jones vectors for each element
-  const intermediates = useMemo(() => {
-    const results: [Complex, Complex][] = [inputJones]
-    let M = identityMat()
-    let current = inputJones
-    for (const el of elements) {
-      M = matMul(jonesMatrix(el.type, el.angle), M)
-      current = matVec(M, inputJones)
-      results.push(current)
-    }
-    return results
-  }, [elements, inputJones])
+    const draw = () => {
+      if (!running || !ctx) return;
 
-  // Stokes for input and output
-  const stokesIn = useMemo(() => jonesToStokes(inputJones), [inputJones])
-  const stokesOut = useMemo(() => jonesToStokes(outputJones), [outputJones])
+      ctx.save();
+      ctx.scale(dpr, dpr);
 
-  // Element management
-  const addElement = useCallback((type: ElementType) => {
-    setElements(prev => [...prev, {
-      id: `el-${Date.now()}`,
-      type,
-      angle: 0,
-    }])
-  }, [])
+      const cx = size / 2;
+      const cy = size / 2;
+      const scaleF = size * 0.35;
 
-  const removeElement = useCallback((id: string) => {
-    setElements(prev => prev.filter(el => el.id !== id))
-  }, [])
+      // Clear
+      ctx.fillStyle = "#f8f9fb";
+      ctx.fillRect(0, 0, size, size);
 
-  const updateElement = useCallback((id: string, updates: Partial<OpticalElement>) => {
-    setElements(prev => prev.map(el => el.id === id ? { ...el, ...updates } : el))
-  }, [])
+      // Grid
+      ctx.strokeStyle = "#e0e3e8";
+      ctx.lineWidth = 0.5;
+      const gridSize = 20;
+      for (let i = 0; i <= size; i += gridSize) {
+        ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, size); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(size, i); ctx.stroke();
+      }
 
-  // Inter-element distance for SVG beam path
-  const elSpacing = 120
+      // Axes
+      ctx.strokeStyle = "#9ca3af";
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(10, cy); ctx.lineTo(size - 10, cy); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx, 10); ctx.lineTo(cx, size - 10); ctx.stroke();
+
+      // Axis labels
+      ctx.fillStyle = "#6b7280";
+      ctx.font = "11px IBM Plex Sans";
+      ctx.textAlign = "center";
+      ctx.fillText("Ex", size - 16, cy - 6);
+      ctx.fillText("Ey", cx + 12, 16);
+
+      // Polarization ellipse
+      const points = polarizationEllipsePoints(polarization, 200);
+      const intensity = Math.sqrt(polarization.a ** 2 + polarization.b ** 2);
+      const normScale = intensity > 0 ? scaleF / Math.max(intensity, 0.01) : scaleF;
+
+      // Animated trail
+      if (showTrail && polarization.handedness !== 0) {
+        const trailSteps = 8;
+        const phaseOffset = phaseRef.current;
+        for (let t = trailSteps; t >= 1; t--) {
+          const offset = ((t / trailSteps) * 0.3 + phaseOffset) % 1.0;
+          ctx.beginPath();
+          const startIdx = Math.round(offset * 200) % 200;
+          const arcLen = Math.round(200 * 0.6);
+          for (let i = 0; i <= arcLen; i++) {
+            const idx = (startIdx + i) % 200;
+            const p = points[idx];
+            const x = cx + p.x * normScale;
+            const y = cy - p.y * normScale;
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          }
+          const alpha = 0.02 + 0.015 * (trailSteps - t);
+          ctx.strokeStyle = `rgba(26, 26, 46, ${alpha})`;
+          ctx.lineWidth = 1 + (trailSteps - t) * 0.3;
+          ctx.stroke();
+        }
+      }
+
+      // Ellipse fill
+      ctx.beginPath();
+      points.forEach((p, i) => {
+        const x = cx + p.x * normScale;
+        const y = cy - p.y * normScale;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.closePath();
+      ctx.fillStyle = "rgba(26, 26, 46, 0.04)";
+      ctx.fill();
+
+      // Ellipse stroke
+      ctx.beginPath();
+      points.forEach((p, i) => {
+        const x = cx + p.x * normScale;
+        const y = cy - p.y * normScale;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.closePath();
+      ctx.strokeStyle = "#1a1a2e";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      // Direction arrows on ellipse
+      if (polarization.handedness !== 0 && showTrail) {
+        const arrowPositions = [40, 90, 140];
+        for (const arrowIdx of arrowPositions) {
+          const nextIdx = arrowIdx + 3;
+          if (arrowIdx < points.length && nextIdx < points.length) {
+            const ax = cx + points[arrowIdx].x * normScale;
+            const ay = cy - points[arrowIdx].y * normScale;
+            const bx = cx + points[nextIdx].x * normScale;
+            const by = cy - points[nextIdx].y * normScale;
+            const angle = Math.atan2(by - ay, bx - ax);
+            const headLen = 5;
+            ctx.beginPath();
+            ctx.moveTo(ax, ay);
+            ctx.lineTo(ax - headLen * Math.cos(angle - 0.4), ay - headLen * Math.sin(angle - 0.4));
+            ctx.moveTo(ax, ay);
+            ctx.lineTo(ax - headLen * Math.cos(angle + 0.4), ay - headLen * Math.sin(angle + 0.4));
+            ctx.strokeStyle = "#cc0000";
+            ctx.lineWidth = 1.2;
+            ctx.stroke();
+          }
+        }
+      }
+
+      // Animated E-field vector (rotating)
+      if (showVector && showTrail) {
+        const [Ex, Ey] = jones;
+        const animPhase = phaseRef.current * Math.PI * 2;
+        const exVal = Ex[0] * Math.cos(animPhase) - Ex[1] * Math.sin(animPhase);
+        const eyVal = Ey[0] * Math.cos(animPhase) - Ey[1] * Math.sin(animPhase);
+        const vx = cx + exVal * normScale;
+        const vy = cy - eyVal * normScale;
+
+        // Vector line
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(vx, vy);
+        ctx.strokeStyle = "#cc4444";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Vector tip dot
+        ctx.beginPath();
+        ctx.arc(vx, vy, 3, 0, Math.PI * 2);
+        ctx.fillStyle = "#cc4444";
+        ctx.fill();
+
+        // Fading trail
+        const trailLen = 15;
+        for (let t = 1; t <= trailLen; t++) {
+          const pastPhase = animPhase - t * 0.12;
+          const pex = Ex[0] * Math.cos(pastPhase) - Ex[1] * Math.sin(pastPhase);
+          const pey = Ey[0] * Math.cos(pastPhase) - Ey[1] * Math.sin(pastPhase);
+          const px = cx + pex * normScale;
+          const py = cy - pey * normScale;
+          ctx.beginPath();
+          ctx.arc(px, py, 1.5, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(204, 68, 68, ${0.4 * (1 - t / trailLen)})`;
+          ctx.fill();
+        }
+      } else if (showVector) {
+        // Static E-field vector arrows
+        const numArrows = 12;
+        for (let i = 0; i < numArrows; i++) {
+          const t = (2 * Math.PI * i) / numArrows;
+          const idx = Math.round((t / (2 * Math.PI)) * 200) % 200;
+          if (idx < points.length) {
+            const x0 = cx + points[idx].x * normScale;
+            const y0 = cy - points[idx].y * normScale;
+            ctx.beginPath();
+            ctx.moveTo(cx, cy);
+            ctx.lineTo(x0, y0);
+            ctx.strokeStyle = "rgba(107, 114, 128, 0.15)";
+            ctx.lineWidth = 0.6;
+            ctx.stroke();
+          }
+        }
+      }
+
+      // Handedness indicator
+      if (polarization.handedness !== 0) {
+        const dir = polarization.handedness > 0 ? "R" : "L";
+        ctx.fillStyle = polarization.handedness > 0 ? "#4488aa" : "#cc4444";
+        ctx.font = "10px IBM Plex Sans";
+        ctx.textAlign = "right";
+        ctx.fillText(dir === "R" ? "右旋 ↻" : "左旋 ↺", size - 8, size - 6);
+      }
+
+      // Label
+      ctx.fillStyle = "#2d3142";
+      ctx.font = "12px IBM Plex Sans";
+      ctx.textAlign = "left";
+      ctx.fillText(label, 8, size - 6);
+
+      ctx.restore();
+
+      // Advance phase
+      phaseRef.current += 0.015;
+      if (phaseRef.current > 1) phaseRef.current -= 1;
+
+      animRef.current = requestAnimationFrame(draw);
+    };
+
+    draw();
+
+    return () => {
+      running = false;
+      cancelAnimationFrame(animRef.current);
+    };
+  }, [polarization, jones, label, size, showVector, showTrail]);
 
   return (
-    <div className="min-h-screen flex flex-col" style={{ background: '#FFFFFF' }}>
-      {/* Header */}
-      <div className="flex-shrink-0 flex items-center" style={{
-        height: '48px', backgroundColor: '#FFFFFF',
-        borderBottom: '1px solid #CCCCCC', paddingLeft: '24px', paddingRight: '24px',
-      }}>
-        <button onClick={onBack} style={{
-          fontFamily: 'var(--font-ibm-plex-sans), system-ui, sans-serif',
-          fontSize: '12px', fontWeight: 400, color: '#555555',
-          background: 'none', border: 'none', cursor: 'pointer',
-          display: 'flex', alignItems: 'center', gap: '4px',
-          transition: 'color 200ms ease-out',
-        }} onMouseEnter={e => (e.currentTarget.style.color = '#1A1A1A')}
-           onMouseLeave={e => (e.currentTarget.style.color = '#555555')}>
-          ← 返回
-        </button>
-        <span style={{ margin: '0 12px', color: '#D0D0D0' }}>|</span>
-        <h1 style={{
-          fontFamily: 'var(--font-ibm-plex-sans), system-ui, sans-serif',
-          fontSize: '20px', fontWeight: 600, color: '#1A1A1A', margin: 0,
-        }}>
-          偏振琼斯矩阵实验室
-        </h1>
+    <canvas
+      ref={canvasRef}
+      style={{ width: size, height: size }}
+      className="border border-[#d4d8e0]"
+    />
+  );
+}
+
+// ─── Element Card ───────────────────────────────────────────────────
+function ElementCard({
+  element,
+  onAngleChange,
+  onRetardationChange,
+  onRemove,
+}: {
+  element: OpticalElement;
+  onAngleChange: (id: string, angle: number) => void;
+  onRetardationChange: (id: string, retardation: number) => void;
+  onRemove: (id: string) => void;
+}) {
+  const info = ELEMENT_INFO[element.type];
+  const isFaraday = element.type === "faraday";
+  const isWaveplate = element.type === "waveplate";
+  return (
+    <div className={`bg-white border rounded p-2.5 ${isFaraday ? "border-[#cc4444] bg-[#fff8f8]" : "border-[#d4d8e0]"}`}>
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-1.5">
+          <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${isFaraday ? "bg-[#fde8e8] text-[#cc4444]" : "bg-[#edf0f5] text-[#4a4a5a]"}`} style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>
+            {info.symbol}
+          </span>
+          <span className="text-[12px] text-[#2d3142]">{info.name}</span>
+          {isFaraday && (
+            <span className="text-[8px] bg-[#cc4444] text-white px-1 py-0 rounded">非互易</span>
+          )}
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-5 w-5 p-0 text-[#9ca3af] hover:text-[#dc2626]"
+          onClick={() => onRemove(element.id)}
+        >
+          ×
+        </Button>
       </div>
-
-      {/* Main content */}
-      <div className="flex flex-1" style={{ minHeight: 0 }}>
-        {/* Left: Visualization area */}
-        <div className="flex-1 dot-grid" style={{ display: 'flex', flexDirection: 'column', padding: '16px' }}>
-          {/* Beam path with elements */}
-          <div style={{
-            flex: '1 1 auto', minHeight: 200, overflowX: 'auto',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <svg width={Math.max(600, (elements.length + 2) * elSpacing)} height="180"
-              viewBox={`0 0 ${Math.max(600, (elements.length + 2) * elSpacing)} 180`}
-            >
-              {/* Optical axis */}
-              <line x1="20" y1="90" x2={Math.max(600, (elements.length + 2) * elSpacing) - 20} y2="90"
-                stroke="#888888" strokeWidth="0.8" strokeDasharray="8,3,2,3" />
-
-              {/* Source */}
-              <g transform={`translate(40, 90)`}>
-                <rect x="-12" y="-12" width="24" height="24" fill="none" stroke="#333333" strokeWidth="1" />
-                <text x="0" y="3" textAnchor="middle" fontSize="7" fill="#555555"
-                  fontFamily="var(--font-ibm-plex-sans), system-ui, sans-serif">SRC</text>
-              </g>
-
-              {/* Elements along beam */}
-              {elements.map((el, idx) => {
-                const x = 40 + (idx + 1) * elSpacing
-                return (
-                  <g key={el.id} transform={`translate(${x}, 90)`}>
-                    {/* Element circle */}
-                    <circle cx="0" cy="0" r="26" fill="none" stroke="#333333" strokeWidth="1.2" />
-                    {/* Hatch lines for wave plates */}
-                    {el.type !== 'polarizer' && Array.from({ length: 7 }, (_, i) => {
-                      const dx = -18 + i * 6
-                      const halfH = Math.sqrt(Math.max(0, 26 * 26 - dx * dx)) * 0.7
-                      return halfH > 2 ? (
-                        <line key={i} x1={dx} y1={-halfH} x2={dx} y2={halfH}
-                          stroke="#333333" strokeWidth="0.5" opacity="0.35" />
-                      ) : null
-                    })}
-                    {/* Transmission/fast axis */}
-                    {(() => {
-                      const aRad = (el.angle * Math.PI) / 180
-                      const len = 22
-                      return el.type === 'polarizer' ? (
-                        <line x1={-len * Math.cos(aRad)} y1={-len * Math.sin(aRad)}
-                          x2={len * Math.cos(aRad)} y2={len * Math.sin(aRad)}
-                          stroke="#1A1A1A" strokeWidth="1.5" />
-                      ) : (
-                        <>
-                          <line x1={-len * Math.cos(aRad)} y1={-len * Math.sin(aRad)}
-                            x2={len * Math.cos(aRad)} y2={len * Math.sin(aRad)}
-                            stroke="#1A1A1A" strokeWidth="1" strokeDasharray="3,2" />
-                          <line x1={-len * Math.cos(aRad + Math.PI / 2)} y1={-len * Math.sin(aRad + Math.PI / 2)}
-                            x2={len * Math.cos(aRad + Math.PI / 2)} y2={len * Math.sin(aRad + Math.PI / 2)}
-                            stroke="#888888" strokeWidth="0.6" strokeDasharray="1,2" />
-                        </>
-                      )
-                    })()}
-                    {/* Label */}
-                    <text x="0" y="42" textAnchor="middle" fontSize="9" fill="#555555"
-                      fontFamily="var(--font-ibm-plex-sans), system-ui, sans-serif">
-                      {ELEMENT_LABELS[el.type]}
-                    </text>
-                    <text x="0" y="52" textAnchor="middle" fontSize="8" fill="#888888"
-                      fontFamily="var(--font-ibm-plex-sans), system-ui, sans-serif" className="tabular-nums">
-                      {el.angle}°
-                    </text>
-                    {/* Intermediate ellipse */}
-                    {(() => {
-                      const intJ = intermediates[idx + 1]
-                      const ell = polarizationEllipse(intJ)
-                      if (ell.intensity < 1e-10) return null
-                      const sc = 18
-                      const pts: string[] = []
-                      const steps = 60
-                      const sign = ell.handedness === 'right' ? 1 : -1
-                      const cosψ = Math.cos(ell.ψ)
-                      const sinψ = Math.sin(ell.ψ)
-                      const mx = Math.max(ell.a, 0.001)
-                      for (let i = 0; i <= steps; i++) {
-                        const t = (2 * Math.PI * i) / steps
-                        const Ex = ell.a * Math.cos(t) / mx * sc
-                        const Ey = ell.b * Math.cos(t + sign * Math.PI / 2) / mx * sc
-                        const px = -70 + (Ex * cosψ - Ey * sinψ)
-                        const py = -(Ex * sinψ + Ey * cosψ)
-                        pts.push(`${i === 0 ? 'M' : 'L'}${px.toFixed(1)},${py.toFixed(1)}`)
-                      }
-                      return <path d={pts.join(' ')} fill="none" stroke="#1A1A1A" strokeWidth="0.8" opacity="0.5" />
-                    })()}
-                  </g>
-                )
-              })}
-
-              {/* Detector */}
-              {(() => {
-                const x = 40 + (elements.length + 1) * elSpacing
-                return (
-                  <g transform={`translate(${x}, 90)`}>
-                    <rect x="-8" y="-14" width="16" height="28" fill="#333333" />
-                    <text x="0" y="28" textAnchor="middle" fontSize="8" fill="#888888"
-                      fontFamily="var(--font-ibm-plex-sans), system-ui, sans-serif">DET</text>
-                  </g>
-                )
-              })()}
-
-              {/* Beam segments */}
-              {[0, ...elements.map((_, i) => i + 1)].map((idx) => {
-                const x1 = 40 + idx * elSpacing + (idx === 0 ? 14 : 28)
-                const x2 = 40 + (idx + 1) * elSpacing - 28
-                if (x2 <= x1) return null
-                const intJ = intermediates[idx]
-                const ell = polarizationEllipse(intJ)
-                const opacity = Math.max(0.15, Math.min(1, ell.intensity))
-                return (
-                  <line key={`beam-${idx}`} x1={x1} y1="90" x2={x2} y2="90"
-                    stroke="#CC0000" strokeWidth="2" opacity={opacity} />
-                )
-              })}
-            </svg>
-          </div>
-
-          {/* Polarization ellipses comparison */}
-          <div style={{
-            display: 'flex', justifyContent: 'center', gap: '40px',
-            padding: '16px 0', borderTop: '1px solid #E8ECF0',
-          }}>
-            <div>
-              <PolarizationEllipseSVG jonesVector={inputJones} size={180} label="输入偏振态" />
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center' }}>
-              <svg width="40" height="24">
-                <line x1="4" y1="12" x2="28" y2="12" stroke="#888888" strokeWidth="1" />
-                <polygon points="28,8 36,12 28,16" fill="#888888" />
-              </svg>
-            </div>
-            <div>
-              <PolarizationEllipseSVG jonesVector={outputJones} size={180} label="输出偏振态" />
-            </div>
-          </div>
+      <div className="space-y-1">
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] text-[#6b7280]">角度 θ</span>
+          <span className="text-[10px] text-[#6b7280]" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>
+            {element.angle.toFixed(1)}°
+          </span>
         </div>
-
-        {/* Right: Control panel */}
-        <div style={{
-          width: '300px', flexShrink: 0, backgroundColor: '#FAFAFA',
-          borderLeft: '1px solid #D0D0D0', overflowY: 'auto',
-          className: 'custom-scrollbar',
-          padding: '16px',
-        }}>
-          {/* Input polarization */}
-          <div style={{ marginBottom: '16px' }}>
-            <div style={{
-              fontSize: '12px', fontWeight: 600, color: '#1A1A1A',
-              fontFamily: 'var(--font-ibm-plex-sans), system-ui, sans-serif',
-              marginBottom: '8px', paddingBottom: '6px',
-              borderBottom: '1px solid #E8ECF0',
-            }}>
-              输入偏振态
+        <Slider
+          value={[element.angle]}
+          onValueChange={([v]) => onAngleChange(element.id, v)}
+          min={-180}
+          max={180}
+          step={0.5}
+        />
+        {isWaveplate && (
+          <>
+            <div className="flex items-center justify-between mt-1">
+              <span className="text-[10px] text-[#6b7280]">相位延迟 δ</span>
+              <span className="text-[10px] text-[#6b7280]" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>
+                {(element.retardation ?? 90).toFixed(1)}°
+              </span>
             </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '8px' }}>
-              {Object.entries(INPUT_PRESETS).map(([key, val]) => (
-                <button key={key} onClick={() => setInputPreset(key as InputPreset)} style={{
-                  fontSize: '10px', padding: '3px 8px', borderRadius: '2px',
-                  border: `1px solid ${inputPreset === key ? '#333333' : '#D0D0D0'}`,
-                  backgroundColor: inputPreset === key ? '#F0F3F6' : '#FFFFFF',
-                  color: '#1A1A1A', cursor: 'pointer',
-                  fontFamily: 'var(--font-ibm-plex-sans), system-ui, sans-serif',
-                  transition: 'border-color 200ms ease-out, background-color 200ms ease-out',
-                }}>
-                  {val.label}
-                </button>
-              ))}
-            </div>
-            {(inputPreset === 'horizontal' || inputPreset === 'vertical' || inputPreset === '45deg') && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '10px', color: '#555555',
-                  fontFamily: 'var(--font-ibm-plex-sans), system-ui, sans-serif' }}>偏振角</span>
-                <input type="range" min="0" max="180" step="1" value={inputAngle}
-                  onChange={e => setInputAngle(Number(e.target.value))}
-                  style={{ flex: 1, accentColor: '#333333' }}
-                />
-                <span className="tabular-nums" style={{ fontSize: '10px', color: '#1A1A1A',
-                  fontFamily: 'var(--font-ibm-plex-sans), system-ui, sans-serif', minWidth: '28px' }}>
-                  {inputAngle}°
-                </span>
-              </div>
-            )}
-          </div>
-
-          {/* Element chain */}
-          <div style={{ marginBottom: '16px' }}>
-            <div style={{
-              fontSize: '12px', fontWeight: 600, color: '#1A1A1A',
-              fontFamily: 'var(--font-ibm-plex-sans), system-ui, sans-serif',
-              marginBottom: '8px', paddingBottom: '6px',
-              borderBottom: '1px solid #E8ECF0',
-            }}>
-              光学元件链
-            </div>
-            {elements.map((el, idx) => (
-              <div key={el.id} style={{
-                backgroundColor: '#FFFFFF', border: '1px solid #D0D0D0',
-                borderRadius: '2px', padding: '8px', marginBottom: '6px',
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span style={{
-                      fontSize: '9px', color: '#888888',
-                      fontFamily: 'var(--font-ibm-plex-sans), system-ui, sans-serif',
-                    }}>
-                      #{idx + 1}
-                    </span>
-                    <select value={el.type} onChange={e => updateElement(el.id, { type: e.target.value as ElementType })}
-                      style={{
-                        fontSize: '11px', padding: '2px 4px', border: '1px solid #D0D0D0',
-                        borderRadius: '2px', backgroundColor: '#FFFFFF', color: '#1A1A1A',
-                        fontFamily: 'var(--font-ibm-plex-sans), system-ui, sans-serif',
-                      }}
-                    >
-                      <option value="polarizer">偏振片</option>
-                      <option value="halfwave">半波片</option>
-                      <option value="quarterwave">1/4波片</option>
-                    </select>
-                  </div>
-                  <button onClick={() => removeElement(el.id)} style={{
-                    fontSize: '10px', color: '#888888', background: 'none', border: 'none',
-                    cursor: 'pointer', padding: '2px',
-                    fontFamily: 'var(--font-ibm-plex-sans), system-ui, sans-serif',
-                  }}>
-                    ✕
-                  </button>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <AngleDial angle={el.angle} onChange={a => updateElement(el.id, { angle: a })} size={56} />
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '4px' }}>
-                      <span style={{ fontSize: '9px', color: '#555555',
-                        fontFamily: 'var(--font-ibm-plex-sans), system-ui, sans-serif' }}>角度</span>
-                      <input type="range" min="0" max="360" step="1" value={el.angle}
-                        onChange={e => updateElement(el.id, { angle: Number(e.target.value) })}
-                        style={{ flex: 1, accentColor: '#333333' }}
-                      />
-                      <span className="tabular-nums" style={{ fontSize: '9px', color: '#1A1A1A',
-                        fontFamily: 'var(--font-ibm-plex-sans), system-ui, sans-serif', minWidth: '28px' }}>
-                        {el.angle}°
-                      </span>
-                    </div>
-                    {/* Intermediate polarization state */}
-                    {(() => {
-                      const intJ = intermediates[idx + 1]
-                      const ell = polarizationEllipse(intJ)
-                      return (
-                        <div style={{ fontSize: '9px', color: '#888888',
-                          fontFamily: 'var(--font-ibm-plex-sans), system-ui, sans-serif' }}>
-                          I = {ell.intensity.toFixed(3)}
-                          {ell.intensity > 0.001 && (
-                            <> · ψ = {(ell.ψ * 180 / Math.PI).toFixed(1)}° · ε = {ell.handedness === 'right' ? '+' : '-'}{(Math.abs(ell.b / ell.a) * 100).toFixed(0)}%</>
-                          )}
-                        </div>
-                      )
-                    })()}
-                  </div>
-                </div>
-              </div>
-            ))}
-            {/* Add element buttons */}
-            <div style={{ display: 'flex', gap: '4px', marginTop: '8px' }}>
-              {(['polarizer', 'halfwave', 'quarterwave'] as ElementType[]).map(type => (
-                <button key={type} onClick={() => addElement(type)} style={{
-                  fontSize: '10px', padding: '4px 10px', borderRadius: '2px',
-                  border: '1px solid #D0D0D0', backgroundColor: '#FFFFFF',
-                  color: '#555555', cursor: 'pointer',
-                  fontFamily: 'var(--font-ibm-plex-sans), system-ui, sans-serif',
-                  transition: 'border-color 200ms ease-out',
-                }}
-                onMouseEnter={e => e.currentTarget.style.borderColor = '#333333'}
-                onMouseLeave={e => e.currentTarget.style.borderColor = '#D0D0D0'}
-                >
-                  + {ELEMENT_LABELS[type]}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Stokes Parameters */}
-          <div style={{ marginBottom: '16px' }}>
-            <div style={{
-              fontSize: '12px', fontWeight: 600, color: '#1A1A1A',
-              fontFamily: 'var(--font-ibm-plex-sans), system-ui, sans-serif',
-              marginBottom: '8px', paddingBottom: '6px',
-              borderBottom: '1px solid #E8ECF0',
-            }}>
-              斯托克斯参数
-            </div>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px',
-              fontFamily: 'var(--font-ibm-plex-sans), system-ui, sans-serif' }}>
-              <thead>
-                <tr>
-                  <th style={{ textAlign: 'left', padding: '2px 6px', color: '#888888', fontWeight: 400, borderBottom: '1px solid #E8ECF0' }}></th>
-                  <th style={{ textAlign: 'right', padding: '2px 6px', color: '#555555', fontWeight: 600, borderBottom: '1px solid #E8ECF0' }}>输入</th>
-                  <th style={{ textAlign: 'right', padding: '2px 6px', color: '#555555', fontWeight: 600, borderBottom: '1px solid #E8ECF0' }}>输出</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(['S₀', 'S₁', 'S₂', 'S₃'] as const).map((label, i) => (
-                  <tr key={label}>
-                    <td style={{ padding: '2px 6px', color: '#555555' }}>{label}</td>
-                    <td className="tabular-nums" style={{ textAlign: 'right', padding: '2px 6px', color: '#1A1A1A' }}>
-                      {stokesIn[i].toFixed(4)}
-                    </td>
-                    <td className="tabular-nums" style={{ textAlign: 'right', padding: '2px 6px', color: '#1A1A1A' }}>
-                      {stokesOut[i].toFixed(4)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Jones Matrix Display */}
-          <div>
-            <div style={{
-              fontSize: '12px', fontWeight: 600, color: '#1A1A1A',
-              fontFamily: 'var(--font-ibm-plex-sans), system-ui, sans-serif',
-              marginBottom: '8px', paddingBottom: '6px',
-              borderBottom: '1px solid #E8ECF0',
-            }}>
-              总琼斯矩阵
-            </div>
-            <div style={{
-              backgroundColor: '#FFFFFF', border: '1px solid #D0D0D0',
-              borderRadius: '2px', padding: '8px', fontSize: '10px',
-              fontFamily: 'var(--font-ibm-plex-sans), system-ui, sans-serif',
-              className: 'tabular-nums',
-            }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 12px' }}>
-                <span className="tabular-nums" style={{ color: '#1A1A1A' }}>
-                  {totalMatrix.a.re.toFixed(3)}{totalMatrix.a.im >= 0 ? '+' : ''}{totalMatrix.a.im.toFixed(3)}i
-                </span>
-                <span className="tabular-nums" style={{ color: '#1A1A1A' }}>
-                  {totalMatrix.b.re.toFixed(3)}{totalMatrix.b.im >= 0 ? '+' : ''}{totalMatrix.b.im.toFixed(3)}i
-                </span>
-                <span className="tabular-nums" style={{ color: '#1A1A1A' }}>
-                  {totalMatrix.c.re.toFixed(3)}{totalMatrix.c.im >= 0 ? '+' : ''}{totalMatrix.c.im.toFixed(3)}i
-                </span>
-                <span className="tabular-nums" style={{ color: '#1A1A1A' }}>
-                  {totalMatrix.d.re.toFixed(3)}{totalMatrix.d.im >= 0 ? '+' : ''}{totalMatrix.d.im.toFixed(3)}i
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Output polarization description */}
-          <div style={{ marginTop: '12px' }}>
-            <div style={{
-              fontSize: '12px', fontWeight: 600, color: '#1A1A1A',
-              fontFamily: 'var(--font-ibm-plex-sans), system-ui, sans-serif',
-              marginBottom: '8px', paddingBottom: '6px',
-              borderBottom: '1px solid #E8ECF0',
-            }}>
-              输出偏振态描述
-            </div>
-            {(() => {
-              const ell = polarizationEllipse(outputJones)
-              const psiDeg = (ell.ψ * 180 / Math.PI)
-              const chiDeg = (ell.χ * 180 / Math.PI)
-              let typeStr = '无光'
-              if (ell.intensity > 0.001) {
-                if (Math.abs(ell.b / ell.a) < 0.02) typeStr = '线偏振'
-                else if (Math.abs(1 - Math.abs(ell.b / ell.a)) < 0.02) typeStr = `${ell.handedness === 'right' ? '右' : '左'}旋圆偏振`
-                else typeStr = `${ell.handedness === 'right' ? '右' : '左'}旋椭圆偏振`
-              }
-              return (
-                <div style={{ fontSize: '10px', color: '#555555',
-                  fontFamily: 'var(--font-ibm-plex-sans), system-ui, sans-serif', lineHeight: '1.8' }}>
-                  <div>类型: <span style={{ color: '#1A1A1A' }}>{typeStr}</span></div>
-                  <div>光强: <span className="tabular-nums" style={{ color: '#1A1A1A' }}>{ell.intensity.toFixed(4)}</span></div>
-                  {ell.intensity > 0.001 && (
-                    <>
-                      <div>方位角 ψ: <span className="tabular-nums" style={{ color: '#1A1A1A' }}>{psiDeg.toFixed(1)}°</span></div>
-                      <div>椭圆率角 χ: <span className="tabular-nums" style={{ color: '#1A1A1A' }}>{chiDeg.toFixed(1)}°</span></div>
-                      <div>半长轴 a: <span className="tabular-nums" style={{ color: '#1A1A1A' }}>{ell.a.toFixed(4)}</span></div>
-                      <div>半短轴 b: <span className="tabular-nums" style={{ color: '#1A1A1A' }}>{ell.b.toFixed(4)}</span></div>
-                    </>
-                  )}
-                </div>
-              )
-            })()}
-          </div>
-        </div>
+            <Slider
+              value={[element.retardation ?? 90]}
+              onValueChange={([v]) => onRetardationChange(element.id, v)}
+              min={0}
+              max={360}
+              step={1}
+            />
+          </>
+        )}
+        {isFaraday && (
+          <p className="text-[9px] text-[#cc4444] mt-1">⚠ 法拉第旋转器：反向传播时旋转方向不变（非互易）</p>
+        )}
       </div>
     </div>
-  )
+  );
+}
+
+// ─── Chain Step Table ───────────────────────────────────────────────
+function ChainStepTable({ steps }: { steps: PropagationStep[] }) {
+  return (
+    <div className="bg-white border border-[#d4d8e0] rounded overflow-hidden">
+      <table className="w-full text-[10px]">
+        <thead>
+          <tr className="bg-[#f8f9fb] border-b border-[#d4d8e0]">
+            <th className="px-1.5 py-1.5 text-left text-[#6b7280] font-medium">步骤</th>
+            <th className="px-1.5 py-1.5 text-left text-[#6b7280] font-medium">元件</th>
+            <th className="px-1.5 py-1.5 text-left text-[#6b7280] font-medium">Jones矢量</th>
+            <th className="px-1.5 py-1.5 text-right text-[#6b7280] font-medium">S₁</th>
+            <th className="px-1.5 py-1.5 text-right text-[#6b7280] font-medium">S₂</th>
+            <th className="px-1.5 py-1.5 text-right text-[#6b7280] font-medium">S₃</th>
+            <th className="px-1.5 py-1.5 text-center text-[#6b7280] font-medium">DOP</th>
+            <th className="px-1.5 py-1.5 text-left text-[#6b7280] font-medium">类型</th>
+          </tr>
+        </thead>
+        <tbody>
+          {steps.map((step, i) => {
+            const elemInfo = step.element ? ELEMENT_INFO[step.element.type] : null;
+            const polType = getPolTypeName(step.analysis.chi, step.analysis.handedness);
+            return (
+              <tr key={i} className={`${i % 2 === 0 ? "" : "bg-[#fafbfc]"} ${step.element?.type === "faraday" ? "bg-[#fff8f8]" : ""}`}>
+                <td className="px-1.5 py-1 text-[#1a1a2e]">
+                  {step.stepIndex === -1 ? "入射" : `${step.stepIndex + 1}`}
+                </td>
+                <td className="px-1.5 py-1 text-[#2d3142]">
+                  {elemInfo ? (
+                    <span className={step.element!.type === "faraday" ? "text-[#cc4444]" : ""}>
+                      {elemInfo.symbol} {step.element!.angle.toFixed(1)}°
+                    </span>
+                  ) : "—"}
+                </td>
+                <td className="px-1.5 py-1 text-[#4a4a5a]" style={{ fontFamily: "var(--font-ibm-plex-mono)", fontSize: "8px" }}>
+                  [{fmtComplex(step.jones[0], 2)}, {fmtComplex(step.jones[1], 2)}]
+                </td>
+                <td className="px-1.5 py-1 text-right" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>
+                  {step.stokes[1].toFixed(3)}
+                </td>
+                <td className="px-1.5 py-1 text-right" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>
+                  {step.stokes[2].toFixed(3)}
+                </td>
+                <td className="px-1.5 py-1 text-right" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>
+                  {step.stokes[3].toFixed(3)}
+                </td>
+                <td className="px-1.5 py-1">
+                  <div className="flex items-center gap-1">
+                    <div className="w-12 h-2 bg-[#edf0f5] rounded overflow-hidden">
+                      <div
+                        className="h-full rounded"
+                        style={{
+                          width: `${Math.min(step.dop * 100, 100)}%`,
+                          backgroundColor: step.dop > 0.99 ? "#008800" : step.dop > 0.9 ? "#44aa44" : "#e8a838",
+                        }}
+                      />
+                    </div>
+                    <span className="text-right w-8" style={{ fontFamily: "var(--font-ibm-plex-mono)", color: step.dop > 0.99 ? "#008800" : "#1a1a2e" }}>
+                      {step.dop.toFixed(2)}
+                    </span>
+                  </div>
+                </td>
+                <td className="px-1.5 py-1 text-[9px] text-[#6b7280]">
+                  {polType}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ─── Faraday Non-Reciprocal Demo ───────────────────────────────────
+function FaradayDemo({
+  inputJones,
+  elements,
+}: {
+  inputJones: JonesVec2;
+  elements: OpticalElement[];
+}) {
+  const hasFaraday = elements.some((e) => e.type === "faraday");
+
+  const { forwardAnalysis, reverseAnalysis } = useMemo(() => {
+    const forward = propagateThroughChain(inputJones, elements);
+
+    // Reverse: reverse element order; Faraday keeps same angle, others negate
+    const reversedElements = [...elements].reverse().map((e) => ({
+      ...e,
+      angle: e.type === "faraday" ? e.angle : -e.angle,
+    }));
+    const reverse = propagateThroughChain(forward, reversedElements);
+
+    return {
+      forwardAnalysis: analyzePolarization(forward),
+      reverseAnalysis: analyzePolarization(reverse),
+    };
+  }, [inputJones, elements]);
+
+  if (!hasFaraday) return null;
+
+  const isIdentical =
+    Math.abs(forwardAnalysis.psi - reverseAnalysis.psi) < 0.01 &&
+    Math.abs(forwardAnalysis.chi - reverseAnalysis.chi) < 0.01;
+
+  return (
+    <div className="bg-[#fff8f8] border border-[#cc4444] rounded p-2.5 space-y-2">
+      <div className="flex items-center gap-1.5">
+        <span className="text-[10px] bg-[#cc4444] text-white px-1.5 py-0.5 rounded font-medium">非互易演示</span>
+        <span className="text-[10px] text-[#cc4444]">法拉第旋转器正向 vs 反向传播</span>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div className="bg-white border border-[#f0d0d0] rounded p-2">
+          <div className="text-[9px] text-[#6b7280] mb-1">正向传播 →</div>
+          <div className="text-[10px] text-[#1a1a2e]" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>
+            ψ = {(forwardAnalysis.psi * 180 / Math.PI).toFixed(1)}°
+          </div>
+          <div className="text-[10px] text-[#1a1a2e]" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>
+            χ = {(forwardAnalysis.chi * 180 / Math.PI).toFixed(1)}°
+          </div>
+          <div className="text-[9px] text-[#6b7280]">{getPolTypeName(forwardAnalysis.chi, forwardAnalysis.handedness)}</div>
+        </div>
+        <div className="bg-white border border-[#f0d0d0] rounded p-2">
+          <div className="text-[9px] text-[#6b7280] mb-1">← 反向传播</div>
+          <div className="text-[10px] text-[#1a1a2e]" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>
+            ψ = {(reverseAnalysis.psi * 180 / Math.PI).toFixed(1)}°
+          </div>
+          <div className="text-[10px] text-[#1a1a2e]" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>
+            χ = {(reverseAnalysis.chi * 180 / Math.PI).toFixed(1)}°
+          </div>
+          <div className="text-[9px] text-[#6b7280]">{getPolTypeName(reverseAnalysis.chi, reverseAnalysis.handedness)}</div>
+        </div>
+      </div>
+      {!isIdentical && (
+        <div className="text-[9px] text-[#cc4444] bg-[#fff0f0] rounded px-2 py-1">
+          ⚠ 正向与反向传播结果不同 — 非互易效应！法拉第旋转器反向传播时旋转方向不变，而普通旋光器会反转。
+        </div>
+      )}
+      {isIdentical && (
+        <div className="text-[9px] text-[#008800] bg-[#f0fff0] rounded px-2 py-1">
+          ✓ 当前配置下正反向结果恰好相同（可能需要调整角度以观察差异）
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Jones Matrix Display ──────────────────────────────────────────
+function JonesMatrixDisplay({
+  elements,
+}: {
+  elements: OpticalElement[];
+}) {
+  if (elements.length === 0) return null;
+
+  return (
+    <div className="bg-white border border-[#d4d8e0] rounded p-2.5 space-y-2">
+      <div className="text-[10px] text-[#6b7280] uppercase tracking-wider font-medium" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>
+        琼斯矩阵链
+      </div>
+      <div className="space-y-1.5">
+        {elements.map((elem) => {
+          const M = getElementMatrix(elem);
+          const info = ELEMENT_INFO[elem.type];
+          return (
+            <div key={elem.id} className={`text-[8px] p-1.5 rounded ${elem.type === "faraday" ? "bg-[#fff8f8] border border-[#f0d0d0]" : "bg-[#f8f9fb]"}`}>
+              <div className="flex items-center gap-1 mb-1">
+                <span className={`font-mono px-1 rounded ${elem.type === "faraday" ? "bg-[#fde8e8] text-[#cc4444]" : "bg-[#edf0f5] text-[#4a4a5a]"}`}>
+                  {info.symbol}
+                </span>
+                <span className="text-[9px] text-[#4a4a5a]">{elem.angle.toFixed(1)}°</span>
+              </div>
+              <div style={{ fontFamily: "var(--font-ibm-plex-mono)" }} className="text-[#4a4a5a]">
+                <div>[{fmtComplex(M[0][0], 3)}, {fmtComplex(M[0][1], 3)}]</div>
+                <div>[{fmtComplex(M[1][0], 3)}, {fmtComplex(M[1][1], 3)}]</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── Animation Time Provider ───────────────────────────────────────
+function AnimationTimeProvider({ children }: { children: (time: number) => React.ReactNode }) {
+  const [time, setTime] = useState(0);
+  const frameRef = useRef<number>(0);
+
+  useEffect(() => {
+    let running = true;
+    const animate = () => {
+      if (!running) return;
+      setTime((t) => t + 0.016);
+      frameRef.current = requestAnimationFrame(animate);
+    };
+    animate();
+    return () => {
+      running = false;
+      cancelAnimationFrame(frameRef.current);
+    };
+  }, []);
+
+  return <>{children(time)}</>;
+}
+
+// ─── Main Component ────────────────────────────────────────────────
+let nextElementId = 1;
+
+export default function JonesPolarizationLab({ onBack }: { onBack: () => void }) {
+  const [inputState, setInputState] = useState("LP45");
+  const [elements, setElements] = useState<OpticalElement[]>([]);
+  const [addingType, setAddingType] = useState<ElementType>("polarizer");
+  const [showEx, setShowEx] = useState(true);
+  const [showEy, setShowEy] = useState(true);
+  const [showComposite, setShowComposite] = useState(true);
+  const [viewTab, setViewTab] = useState<"ellipse" | "poincare" | "efield">("ellipse");
+
+  const inputJones = INPUT_STATES[inputState]?.jones || LP45;
+  const outputJones = useMemo(
+    () => propagateThroughChain(inputJones, elements),
+    [inputJones, elements]
+  );
+  const inputPol = useMemo(() => analyzePolarization(inputJones), [inputJones]);
+  const outputPol = useMemo(() => analyzePolarization(outputJones), [outputJones]);
+
+  const chainSteps = useMemo(
+    () => propagateThroughChainStepByStep(inputJones, elements),
+    [inputJones, elements]
+  );
+
+  const inputStokes = useMemo(() => stokesFromJones(inputJones), [inputJones]);
+  const outputStokes = useMemo(() => stokesFromJones(outputJones), [outputJones]);
+  const outputDOP = useMemo(() => degreeOfPolarization(outputStokes), [outputStokes]);
+
+  const addElement = useCallback(() => {
+    const newElement: OpticalElement = {
+      id: `elem-${nextElementId++}`,
+      type: addingType,
+      angle: 0,
+      retardation: addingType === "waveplate" ? 90 : undefined,
+      label: ELEMENT_INFO[addingType].name,
+    };
+    setElements((prev) => [...prev, newElement]);
+  }, [addingType]);
+
+  const removeElement = useCallback((id: string) => {
+    setElements((prev) => prev.filter((el) => el.id !== id));
+  }, []);
+
+  const updateAngle = useCallback((id: string, angle: number) => {
+    setElements((prev) =>
+      prev.map((el) => (el.id === id ? { ...el, angle } : el))
+    );
+  }, []);
+
+  const updateRetardation = useCallback((id: string, retardation: number) => {
+    setElements((prev) =>
+      prev.map((el) => (el.id === id ? { ...el, retardation } : el))
+    );
+  }, []);
+
+  return (
+    <AnimationTimeProvider>
+      {(animTime) => (
+        <div className="min-h-screen flex flex-col bg-[#FFFFFF]">
+          {/* Header */}
+          <div className="flex-shrink-0 flex items-center h-12 border-b border-[#d4d8e0] px-6">
+            <button
+              onClick={onBack}
+              className="text-[12px] font-normal text-[#555] hover:text-[#1a1a2e] transition-colors bg-transparent border-none cursor-pointer flex items-center gap-1"
+            >
+              ← 返回
+            </button>
+            <span className="mx-3 text-[#d4d8e0]">|</span>
+            <h1 className="text-[20px] font-semibold text-[#1a1a2e] m-0">
+              偏振琼斯矩阵实验室
+            </h1>
+          </div>
+
+          {/* Main content */}
+          <div className="flex flex-1 min-h-0">
+            {/* Left control panel */}
+            <div className="w-80 flex-shrink-0 bg-[#f8f9fb] border-r border-[#d4d8e0] overflow-y-auto p-4 space-y-4">
+              {/* Input state selector */}
+              <div>
+                <div className="text-[12px] font-semibold text-[#1a1a2e] mb-2 pb-1.5 border-b border-[#d4d8e0]">
+                  输入偏振态
+                </div>
+                <Select value={inputState} onValueChange={setInputState}>
+                  <SelectTrigger className="w-full h-8 text-[11px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(INPUT_STATES).map(([key, { label }]) => (
+                      <SelectItem key={key} value={key}>
+                        {label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Element chain */}
+              <div>
+                <div className="text-[12px] font-semibold text-[#1a1a2e] mb-2 pb-1.5 border-b border-[#d4d8e0]">
+                  光学元件链
+                </div>
+                <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
+                  {elements.map((el) => (
+                    <ElementCard
+                      key={el.id}
+                      element={el}
+                      onAngleChange={updateAngle}
+                      onRetardationChange={updateRetardation}
+                      onRemove={removeElement}
+                    />
+                  ))}
+                </div>
+
+                {/* Add element */}
+                <div className="mt-2 flex items-center gap-2">
+                  <Select value={addingType} onValueChange={(v) => setAddingType(v as ElementType)}>
+                    <SelectTrigger className="flex-1 h-7 text-[10px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Object.entries(ELEMENT_INFO).map(([key, info]) => (
+                        <SelectItem key={key} value={key}>
+                          {info.symbol} {info.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-[10px] px-3 border-[#d4d8e0] hover:bg-[#edf0f5]"
+                    onClick={addElement}
+                  >
+                    + 添加
+                  </Button>
+                </div>
+              </div>
+
+              {/* View tabs */}
+              <div>
+                <div className="text-[12px] font-semibold text-[#1a1a2e] mb-2 pb-1.5 border-b border-[#d4d8e0]">
+                  可视化视图
+                </div>
+                <div className="flex gap-1">
+                  {([
+                    { key: "ellipse", label: "偏振椭圆" },
+                    { key: "poincare", label: "庞加莱球" },
+                    { key: "efield", label: "电场螺旋" },
+                  ] as const).map(({ key, label }) => (
+                    <button
+                      key={key}
+                      onClick={() => setViewTab(key)}
+                      className={`flex-1 text-[10px] py-1.5 rounded border transition-colors ${
+                        viewTab === key
+                          ? "bg-[#2d3142] text-white border-[#2d3142]"
+                          : "bg-white text-[#4a4a5a] border-[#d4d8e0] hover:bg-[#edf0f5]"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* E-field display options */}
+              {(viewTab === "efield") && (
+                <div>
+                  <div className="text-[12px] font-semibold text-[#1a1a2e] mb-2 pb-1.5 border-b border-[#d4d8e0]">
+                    电场分量
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        id="show-ex"
+                        checked={showEx}
+                        onCheckedChange={(v) => setShowEx(v === true)}
+                      />
+                      <Label htmlFor="show-ex" className="text-[11px] text-[#cc4444] cursor-pointer">Ex 分量 (红)</Label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        id="show-ey"
+                        checked={showEy}
+                        onCheckedChange={(v) => setShowEy(v === true)}
+                      />
+                      <Label htmlFor="show-ey" className="text-[11px] text-[#44aa44] cursor-pointer">Ey 分量 (绿)</Label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        id="show-composite"
+                        checked={showComposite}
+                        onCheckedChange={(v) => setShowComposite(v === true)}
+                      />
+                      <Label htmlFor="show-composite" className="text-[11px] text-[#2d3142] cursor-pointer">合电场 (黑)</Label>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Output polarization info */}
+              <div>
+                <div className="text-[12px] font-semibold text-[#1a1a2e] mb-2 pb-1.5 border-b border-[#d4d8e0]">
+                  输出偏振态
+                </div>
+                <div className="bg-white border border-[#d4d8e0] rounded p-2.5 space-y-1 text-[10px]">
+                  <div className="flex justify-between">
+                    <span className="text-[#6b7280]">类型</span>
+                    <span className="text-[#1a1a2e]">{getPolTypeName(outputPol.chi, outputPol.handedness)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#6b7280]">方位角 ψ</span>
+                    <span className="text-[#1a1a2e]" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>
+                      {(outputPol.psi * 180 / Math.PI).toFixed(1)}°
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#6b7280]">椭圆率角 χ</span>
+                    <span className="text-[#1a1a2e]" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>
+                      {(outputPol.chi * 180 / Math.PI).toFixed(1)}°
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#6b7280]">DOP</span>
+                    <span style={{ fontFamily: "var(--font-ibm-plex-mono)", color: outputDOP > 0.99 ? "#008800" : "#1a1a2e" }}>
+                      {outputDOP.toFixed(4)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#6b7280]">S₁</span>
+                    <span style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>{outputStokes[1].toFixed(4)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#6b7280]">S₂</span>
+                    <span style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>{outputStokes[2].toFixed(4)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#6b7280]">S₃</span>
+                    <span style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>{outputStokes[3].toFixed(4)}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Faraday demo */}
+              <FaradayDemo inputJones={inputJones} elements={elements} />
+
+              {/* Jones Matrix Display */}
+              <JonesMatrixDisplay elements={elements} />
+
+              {/* Chain Step Table */}
+              {chainSteps.length > 0 && (
+                <div>
+                  <div className="text-[12px] font-semibold text-[#1a1a2e] mb-2 pb-1.5 border-b border-[#d4d8e0]">
+                    传播步骤
+                  </div>
+                  <ChainStepTable steps={chainSteps} />
+                </div>
+              )}
+            </div>
+
+            {/* Right visualization area */}
+            <div className="flex-1 flex flex-col min-h-0">
+              {/* Ellipse view */}
+              {viewTab === "ellipse" && (
+                <div className="flex-1 flex items-center justify-center gap-8 p-6">
+                  <div className="flex flex-col items-center gap-2">
+                    <PolarizationCanvas
+                      polarization={inputPol}
+                      jones={inputJones}
+                      label="输入偏振态"
+                      size={280}
+                      showVector={true}
+                      showTrail={true}
+                    />
+                    <span className="text-[11px] text-[#6b7280]">入射</span>
+                  </div>
+                  <div className="flex items-center">
+                    <svg width="48" height="24" viewBox="0 0 48 24">
+                      <line x1="4" y1="12" x2="32" y2="12" stroke="#9ca3af" strokeWidth="1" />
+                      <polygon points="32,8 40,12 32,16" fill="#9ca3af" />
+                    </svg>
+                  </div>
+                  <div className="flex flex-col items-center gap-2">
+                    <PolarizationCanvas
+                      polarization={outputPol}
+                      jones={outputJones}
+                      label="输出偏振态"
+                      size={280}
+                      showVector={true}
+                      showTrail={true}
+                    />
+                    <span className="text-[11px] text-[#6b7280]">出射</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Poincaré sphere view */}
+              {viewTab === "poincare" && (
+                <div className="flex-1 min-h-0">
+                  <Canvas
+                    camera={{ position: [3.5, 2.5, 3.5], fov: 45, near: 0.1, far: 50 }}
+                    style={{ width: "100%", height: "100%" }}
+                  >
+                    <ambientLight intensity={0.6} />
+                    <directionalLight position={[5, 5, 5]} intensity={0.4} />
+                    <PoincareSphere
+                      inputStokes={inputStokes}
+                      outputStokes={outputStokes}
+                      chainSteps={chainSteps}
+                      animTime={animTime}
+                    />
+                    <OrbitControls enableDamping dampingFactor={0.1} rotateSpeed={0.8} />
+                  </Canvas>
+                </div>
+              )}
+
+              {/* E-field helix view */}
+              {viewTab === "efield" && (
+                <div className="flex-1 min-h-0">
+                  <Canvas
+                    camera={{ position: [3, 2, 3], fov: 45, near: 0.1, far: 50 }}
+                    style={{ width: "100%", height: "100%" }}
+                  >
+                    <ambientLight intensity={0.6} />
+                    <directionalLight position={[5, 5, 5]} intensity={0.4} />
+                    <EFieldHelix
+                      jones={outputJones}
+                      showEx={showEx}
+                      showEy={showEy}
+                      showComposite={showComposite}
+                      animTime={animTime}
+                      chainSteps={chainSteps}
+                    />
+                    <OrbitControls enableDamping dampingFactor={0.1} rotateSpeed={0.8} />
+                  </Canvas>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </AnimationTimeProvider>
+  );
 }

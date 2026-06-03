@@ -1,722 +1,899 @@
-'use client'
+"use client";
 
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { Button } from "@/components/ui/button";
+import { Slider } from "@/components/ui/slider";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import {
+  processBirefringenceFrame,
+  retardationToMichelLevy,
+  type BirefringenceParams,
+} from "@/lib/optics/birefringence";
 
-const FONT = 'var(--font-ibm-plex-sans), system-ui, sans-serif'
+/* ─── Michel-Lévy Chart Reusable Canvas ─── */
+function MichelLevyChart({ width = 280, height = 40 }: { width?: number; height?: number }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
-type DemoPattern = 'disk' | 'plate' | 'beam' | 'residual'
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
+    ctx.scale(dpr, dpr);
+
+    // Draw Michel-Lévy color bar
+    for (let x = 0; x < width; x++) {
+      const retardation = (x / width) * 2000;
+      const [r, g, b] = retardationToMichelLevy(retardation);
+      ctx.fillStyle = `rgb(${r},${g},${b})`;
+      ctx.fillRect(x, 0, 1, height - 12);
+    }
+
+    // Border
+    ctx.strokeStyle = "#d4d8e0";
+    ctx.lineWidth = 0.5;
+    ctx.strokeRect(0, 0, width, height - 12);
+
+    // Labels
+    ctx.fillStyle = "#6b7280";
+    ctx.font = "8px IBM Plex Mono, monospace";
+    ctx.textAlign = "center";
+    ctx.fillText("0", 0, height - 1);
+    ctx.fillText("500", width * 0.25, height - 1);
+    ctx.fillText("1000", width * 0.5, height - 1);
+    ctx.fillText("1500", width * 0.75, height - 1);
+    ctx.fillText("2000 nm", width, height - 1);
+  }, [width, height]);
+
+  return <canvas ref={canvasRef} style={{ width, height }} />;
+}
+
+/* ─── Demo Pattern Types ─── */
+type DemoPattern = "disk" | "plate" | "beam" | "residual";
 
 const DEMO_PATTERN_LABELS: Record<DemoPattern, string> = {
-  disk: '圆盘压缩',
-  plate: '方板拉伸',
-  beam: '梁弯曲',
-  residual: '残余应力',
-}
+  disk: "圆盘压缩",
+  plate: "方板拉伸",
+  beam: "梁弯曲",
+  residual: "残余应力",
+};
 
 const DEMO_PATTERN_DESC: Record<DemoPattern, string> = {
-  disk: '同心彩色环 — 受压玻璃盘在正交偏光镜下的干涉图样',
-  plate: '对角等色线 — 单轴拉伸板的应力双折射条纹',
-  beam: '中性轴 + 弯曲条纹 — 梁弯曲时的应力分布',
-  residual: '不规则图样 — 钢化玻璃的残余应力分布',
-}
+  disk: "同心彩色环 — 受压玻璃盘在正交偏光镜下的干涉图样",
+  plate: "对角等色线 — 单轴拉伸板的应力双折射条纹",
+  beam: "中性轴 + 弯曲条纹 — 梁弯曲时的应力分布",
+  residual: "不规则图样 — 钢化玻璃的残余应力分布",
+};
 
 /* ─── Stress-optical standard color map ─── */
-// Maps retardation (in nm) to color using Michel-Lévy chart approximation
 function stressColorMap(retardationNm: number): [number, number, number] {
-  const r = Math.max(0, Math.min(255,
-    retardationNm < 200 ? retardationNm * 1.2 :
-    retardationNm < 400 ? 240 - (retardationNm - 200) * 0.8 :
-    retardationNm < 550 ? 80 + (retardationNm - 400) * 1.1 :
-    245 - (retardationNm - 550) * 0.5
-  ))
-  const g = Math.max(0, Math.min(255,
-    retardationNm < 150 ? retardationNm * 0.6 :
-    retardationNm < 300 ? 90 + (retardationNm - 150) * 0.5 :
-    retardationNm < 500 ? 165 - (retardationNm - 300) * 0.5 :
-    65 + (retardationNm - 500) * 0.3
-  ))
-  const b = Math.max(0, Math.min(255,
-    retardationNm < 100 ? retardationNm * 1.5 :
-    retardationNm < 250 ? 150 - (retardationNm - 100) * 0.3 :
-    retardationNm < 450 ? 105 + (retardationNm - 250) * 0.5 :
-    205 - (retardationNm - 450) * 0.6
-  ))
-  return [Math.round(r), Math.round(g), Math.round(b)]
+  const r = Math.max(
+    0,
+    Math.min(
+      255,
+      retardationNm < 200
+        ? retardationNm * 1.2
+        : retardationNm < 400
+          ? 240 - (retardationNm - 200) * 0.8
+          : retardationNm < 550
+            ? 80 + (retardationNm - 400) * 1.1
+            : 245 - (retardationNm - 550) * 0.5
+    )
+  );
+  const g = Math.max(
+    0,
+    Math.min(
+      255,
+      retardationNm < 150
+        ? retardationNm * 0.6
+        : retardationNm < 300
+          ? 90 + (retardationNm - 150) * 0.5
+          : retardationNm < 500
+            ? 165 - (retardationNm - 300) * 0.5
+            : 65 + (retardationNm - 500) * 0.3
+    )
+  );
+  const b = Math.max(
+    0,
+    Math.min(
+      255,
+      retardationNm < 100
+        ? retardationNm * 1.5
+        : retardationNm < 250
+          ? 150 - (retardationNm - 100) * 0.3
+          : retardationNm < 450
+            ? 105 + (retardationNm - 250) * 0.5
+            : 205 - (retardationNm - 450) * 0.6
+    )
+  );
+  return [Math.round(r), Math.round(g), Math.round(b)];
 }
 
 /* ─── Demo pattern retardation generators ─── */
-// Each returns retardation in nm for a given pixel coordinate
-// cx, cy: center of canvas; x, y: pixel position; w, h: canvas dimensions
-
 function diskCompressionRetardation(
-  x: number, y: number, cx: number, cy: number, w: number, h: number,
-  stressFactor: number, birefringenceCoeff: number, rotation: number
+  x: number,
+  y: number,
+  cx: number,
+  cy: number,
+  w: number,
+  h: number,
+  stressFactor: number,
+  birefringenceCoeff: number,
+  rotation: number
 ): number {
-  // Rotate coordinates
-  const cosR = Math.cos(rotation)
-  const sinR = Math.sin(rotation)
-  const dx = x - cx
-  const dy = y - cy
-  const rx = dx * cosR - dy * sinR
-  const ry = dx * sinR + dy * cosR
+  const cosR = Math.cos(rotation);
+  const sinR = Math.sin(rotation);
+  const dx = x - cx;
+  const dy = y - cy;
+  const rx = dx * cosR - dy * sinR;
+  const ry = dx * sinR + dy * cosR;
 
-  const maxR = Math.min(w, h) * 0.45
-  const dist = Math.sqrt(rx * rx + ry * ry)
+  const maxR = Math.min(w, h) * 0.45;
+  const dist = Math.sqrt(rx * rx + ry * ry);
+  if (dist > maxR) return 0;
 
-  if (dist > maxR) return 0 // outside the disk
-
-  // Normalized radius [0, 1]
-  const rn = dist / maxR
-
-  // Retardation for disk compression:
-  // σ_r - σ_θ proportional to (1 - r²/a²), so retardation ∝ (1 - r²)
-  // Creates concentric isochromatic fringes
-  const stressDiff = (1 - rn * rn) * stressFactor * birefringenceCoeff
-
-  // Modulate with cos² to create fringe orders
-  const retardation = stressDiff * 300 * (0.5 + 0.5 * Math.cos(Math.PI * stressDiff * 2.5))
-
-  // Add slight radial variation for realism
-  const fringeDetail = 20 * Math.sin(rn * Math.PI * stressFactor * 3) * birefringenceCoeff
-
-  return Math.max(0, retardation + fringeDetail)
+  const rn = dist / maxR;
+  const stressDiff = (1 - rn * rn) * stressFactor * birefringenceCoeff;
+  const retardation = stressDiff * 300 * (0.5 + 0.5 * Math.cos(Math.PI * stressDiff * 2.5));
+  const fringeDetail = 20 * Math.sin(rn * Math.PI * stressFactor * 3) * birefringenceCoeff;
+  return Math.max(0, retardation + fringeDetail);
 }
 
 function plateTensionRetardation(
-  x: number, y: number, cx: number, cy: number, w: number, h: number,
-  stressFactor: number, birefringenceCoeff: number, rotation: number
+  x: number,
+  y: number,
+  cx: number,
+  cy: number,
+  w: number,
+  h: number,
+  stressFactor: number,
+  birefringenceCoeff: number,
+  rotation: number
 ): number {
-  // Rotate coordinates
-  const cosR = Math.cos(rotation)
-  const sinR = Math.sin(rotation)
-  const dx = x - cx
-  const dy = y - cy
-  const rx = dx * cosR - dy * sinR
-  const ry = dx * sinR + dy * cosR
+  const cosR = Math.cos(rotation);
+  const sinR = Math.sin(rotation);
+  const dx = x - cx;
+  const dy = y - cy;
+  const rx = dx * cosR - dy * sinR;
+  const ry = dx * sinR + dy * cosR;
 
-  const halfW = w * 0.45
-  const halfH = h * 0.45
+  const halfW = w * 0.45;
+  const halfH = h * 0.45;
+  if (Math.abs(rx) > halfW || Math.abs(ry) > halfH) return 0;
 
-  // Check if within plate bounds
-  if (Math.abs(rx) > halfW || Math.abs(ry) > halfH) return 0
+  const edgeDistX = (halfW - Math.abs(rx)) / halfW;
+  let stressDiff = stressFactor * birefringenceCoeff;
+  stressDiff *= 0.7 + 0.3 * Math.min(edgeDistX, 1);
 
-  // Plate under uniaxial tension along y-axis
-  // σ_y - σ_x = A * stressFactor (uniform in ideal case)
-  // Near edges and holes, stress concentration creates fringes
-  const edgeDistX = (halfW - Math.abs(rx)) / halfW
-  const edgeDistY = (halfH - Math.abs(ry)) / halfH
+  const ny = ry / halfH;
+  const fringePattern = Math.cos(Math.PI * ny * stressFactor * 2);
 
-  // Base stress (uniform tension)
-  let stressDiff = stressFactor * birefringenceCoeff
+  const holeR = Math.min(w, h) * 0.08;
+  const distFromHole = Math.sqrt(rx * rx + ry * ry);
+  if (distFromHole < holeR * 1.1) return 0;
+  const holeStressConcentration =
+    distFromHole < holeR * 3 ? (holeR / distFromHole) * stressFactor * 0.5 : 0;
 
-  // Stress concentration near edges (St. Venant effect)
-  stressDiff *= (0.7 + 0.3 * Math.min(edgeDistX, 1))
-
-  // Add fringe pattern from stress variation
-  const ny = ry / halfH
-  const fringePattern = Math.cos(Math.PI * ny * stressFactor * 2)
-
-  // Near hole at center (simulated stress concentrator)
-  const holeR = Math.min(w, h) * 0.08
-  const distFromHole = Math.sqrt(rx * rx + ry * ry)
-  if (distFromHole < holeR * 1.1) return 0 // hole itself
-  const holeStressConcentration = distFromHole < holeR * 3
-    ? (holeR / distFromHole) * stressFactor * 0.5
-    : 0
-
-  const retardation = (stressDiff * 250 * fringePattern + holeStressConcentration * 200)
-
-  return Math.max(0, retardation)
+  const retardation = stressDiff * 250 * fringePattern + holeStressConcentration * 200;
+  return Math.max(0, retardation);
 }
 
 function beamBendingRetardation(
-  x: number, y: number, cx: number, cy: number, w: number, h: number,
-  stressFactor: number, birefringenceCoeff: number, rotation: number
+  x: number,
+  y: number,
+  cx: number,
+  cy: number,
+  w: number,
+  h: number,
+  stressFactor: number,
+  birefringenceCoeff: number,
+  rotation: number
 ): number {
-  // Rotate coordinates
-  const cosR = Math.cos(rotation)
-  const sinR = Math.sin(rotation)
-  const dx = x - cx
-  const dy = y - cy
-  const rx = dx * cosR - dy * sinR
-  const ry = dx * sinR + dy * cosR
+  const cosR = Math.cos(rotation);
+  const sinR = Math.sin(rotation);
+  const dx = x - cx;
+  const dy = y - cy;
+  const rx = dx * cosR - dy * sinR;
+  const ry = dx * sinR + dy * cosR;
 
-  const beamHalfH = h * 0.12
-  const beamHalfW = w * 0.45
+  const beamHalfH = h * 0.12;
+  const beamHalfW = w * 0.45;
+  if (Math.abs(rx) > beamHalfW || Math.abs(ry) > beamHalfH) return 0;
 
-  // Check if within beam bounds
-  if (Math.abs(rx) > beamHalfW || Math.abs(ry) > beamHalfH) return 0
+  const mx = Math.abs(rx) / beamHalfW;
+  const bendingMoment = (1 - mx) * stressFactor;
+  const ny = ry / beamHalfH;
+  const stressDiff = bendingMoment * ny * birefringenceCoeff * 2;
+  const retardation = Math.abs(stressDiff) * 300;
 
-  // Beam under 3-point bending
-  // Bending moment M varies along beam: triangular distribution
-  // M(x) = M_max * (1 - |x|/L) for center loading
-  const mx = Math.abs(rx) / beamHalfW
-  const bendingMoment = (1 - mx) * stressFactor
+  const fringeOrder = Math.abs(stressDiff) * stressFactor * 1.5;
+  const fringeMod = 0.5 + 0.5 * Math.cos(Math.PI * fringeOrder * 2);
+  const detailedRetardation = retardation * fringeMod;
+  const neutralAxisFade = Math.abs(ny);
 
-  // σ = M * y / I, where I is constant
-  // Neutral axis at y = 0
-  const ny = ry / beamHalfH // [-1, 1]
-
-  // Stress proportional to y and bending moment
-  const stressDiff = bendingMoment * ny * birefringenceCoeff * 2
-
-  // Retardation proportional to stress difference
-  // cos²(π * δ/λ) creates isochromatic fringes
-  const retardation = Math.abs(stressDiff) * 300
-
-  // Add fringe detail
-  const fringeOrder = Math.abs(stressDiff) * stressFactor * 1.5
-  const fringeMod = 0.5 + 0.5 * Math.cos(Math.PI * fringeOrder * 2)
-  const detailedRetardation = retardation * fringeMod
-
-  // Neutral axis (y ≈ 0) should be dark
-  const neutralAxisFade = Math.abs(ny)
-
-  return Math.max(0, detailedRetardation * neutralAxisFade)
+  return Math.max(0, detailedRetardation * neutralAxisFade);
 }
 
 function residualStressRetardation(
-  x: number, y: number, cx: number, cy: number, w: number, h: number,
-  stressFactor: number, birefringenceCoeff: number, rotation: number
+  x: number,
+  y: number,
+  cx: number,
+  cy: number,
+  w: number,
+  h: number,
+  stressFactor: number,
+  birefringenceCoeff: number,
+  rotation: number
 ): number {
-  // Rotate coordinates
-  const cosR = Math.cos(rotation)
-  const sinR = Math.sin(rotation)
-  const dx = x - cx
-  const dy = y - cy
-  const rx = dx * cosR - dy * sinR
-  const ry = dx * sinR + dy * cosR
+  const cosR = Math.cos(rotation);
+  const sinR = Math.sin(rotation);
+  const dx = x - cx;
+  const dy = y - cy;
+  const rx = dx * cosR - dy * sinR;
+  const ry = dx * sinR + dy * cosR;
 
-  const halfW = w * 0.45
-  const halfH = h * 0.45
+  const halfW = w * 0.45;
+  const halfH = h * 0.45;
+  if (Math.abs(rx) > halfW || Math.abs(ry) > halfH) return 0;
 
-  // Check if within plate bounds (rectangular piece of tempered glass)
-  if (Math.abs(rx) > halfW || Math.abs(ry) > halfH) return 0
+  const nx = rx / halfW;
+  const ny = ry / halfH;
 
-  const nx = rx / halfW
-  const ny = ry / halfH
+  const edgeX = (1 - Math.abs(nx)) * 4;
+  const edgeY = (1 - Math.abs(ny)) * 4;
+  const surfaceStress =
+    (1 / (1 + edgeX * edgeX) + 1 / (1 + edgeY * edgeY)) * stressFactor * 0.3;
 
-  // Residual stress in tempered glass is a combination of:
-  // 1. Surface compression (parabolic through thickness → varies near edges)
-  // 2. Internal tension (center region)
-  // 3. Non-uniform cooling patterns (sinusoidal)
+  const cooling1 = Math.sin(nx * Math.PI * 2.3 + ny * Math.PI * 1.7) * 0.4;
+  const cooling2 = Math.cos(nx * Math.PI * 3.1 - ny * Math.PI * 2.1) * 0.3;
+  const cooling3 = Math.sin((nx + ny) * Math.PI * 1.5) * 0.2;
+  const cooling4 = Math.cos(nx * Math.PI * 4.7) * Math.sin(ny * Math.PI * 3.3) * 0.15;
+  const coolingPattern =
+    (cooling1 + cooling2 + cooling3 + cooling4) * stressFactor * birefringenceCoeff;
 
-  // Surface compression near edges
-  const edgeX = (1 - Math.abs(nx)) * 4
-  const edgeY = (1 - Math.abs(ny)) * 4
-  const surfaceStress = (1 / (1 + edgeX * edgeX) + 1 / (1 + edgeY * edgeY)) * stressFactor * 0.3
+  const centralDist = Math.sqrt(nx * nx + ny * ny);
+  const centralTension =
+    Math.exp(-centralDist * centralDist * 2) * stressFactor * 0.5 * birefringenceCoeff;
 
-  // Non-uniform cooling pattern - multiple sinusoidal components
-  const cooling1 = Math.sin(nx * Math.PI * 2.3 + ny * Math.PI * 1.7) * 0.4
-  const cooling2 = Math.cos(nx * Math.PI * 3.1 - ny * Math.PI * 2.1) * 0.3
-  const cooling3 = Math.sin((nx + ny) * Math.PI * 1.5) * 0.2
-  const cooling4 = Math.cos(nx * Math.PI * 4.7) * Math.sin(ny * Math.PI * 3.3) * 0.15
+  const totalStress = surfaceStress + coolingPattern + centralTension;
+  const retardation = Math.abs(totalStress) * 350;
+  const fineFringes =
+    15 * Math.sin(totalStress * Math.PI * stressFactor * 2) * birefringenceCoeff;
 
-  const coolingPattern = (cooling1 + cooling2 + cooling3 + cooling4) * stressFactor * birefringenceCoeff
-
-  // Central tension zone
-  const centralDist = Math.sqrt(nx * nx + ny * ny)
-  const centralTension = Math.exp(-centralDist * centralDist * 2) * stressFactor * 0.5 * birefringenceCoeff
-
-  // Combine all contributions
-  const totalStress = surfaceStress + coolingPattern + centralTension
-
-  // Convert to retardation with fringe pattern
-  const retardation = Math.abs(totalStress) * 350
-
-  // Add fine fringe detail
-  const fineFringes = 15 * Math.sin(totalStress * Math.PI * stressFactor * 2) * birefringenceCoeff
-
-  return Math.max(0, retardation + fineFringes)
+  return Math.max(0, retardation + fineFringes);
 }
 
 /* ─── Main Component ─── */
-export default function PolarizationVisionScanner({ onBack }: { onBack: () => void }) {
-  const videoRef = useRef<HTMLVideoElement>(null)
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const [cameraActive, setCameraActive] = useState(false)
-  const [retardationScale, setRetardationScale] = useState(500) // nm max
-  const [stream, setStream] = useState<MediaStream | null>(null)
+export default function PolarizationScanner({ onBack }: { onBack: () => void }) {
+  // Camera mode state
+  const [streaming, setStreaming] = useState(false);
+  const [sensitivity, setSensitivity] = useState(1.0);
+  const [showOriginal, setShowOriginal] = useState(true);
+  const [showProcessed, setShowProcessed] = useState(true);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const originalCanvasRef = useRef<HTMLCanvasElement>(null);
+  const processedCanvasRef = useRef<HTMLCanvasElement>(null);
+  const animFrameRef = useRef<number>(0);
+  const streamRef = useRef<MediaStream | null>(null);
 
   // Demo mode state
-  const [demoPattern, setDemoPattern] = useState<DemoPattern>('disk')
-  const [stressMagnitude, setStressMagnitude] = useState(3) // 1-10
-  const [birefringenceCoeff, setBirefringenceCoeff] = useState(1.5) // 0.1-3.0
-  const [rotationAngle, setRotationAngle] = useState(0) // 0-360
+  const [demoPattern, setDemoPattern] = useState<DemoPattern>("disk");
+  const [stressMagnitude, setStressMagnitude] = useState(3);
+  const [birefringenceCoeff, setBirefringenceCoeff] = useState(1.5);
+  const [rotationAngle, setRotationAngle] = useState(0);
+  const [retardationScale, setRetardationScale] = useState(500);
+
+  // Demo canvas ref
+  const demoCanvasRef = useRef<HTMLCanvasElement>(null);
 
   // Refs for demo rendering to avoid stale closures
-  const demoPatternRef = useRef(demoPattern)
-  const stressMagRef = useRef(stressMagnitude)
-  const birefCoeffRef = useRef(birefringenceCoeff)
-  const rotationRef = useRef(rotationAngle)
-  const retardationScaleRef = useRef(retardationScale)
+  const demoPatternRef = useRef(demoPattern);
+  const stressMagRef = useRef(stressMagnitude);
+  const birefCoeffRef = useRef(birefringenceCoeff);
+  const rotationRef = useRef(rotationAngle);
+  const retardationScaleRef = useRef(retardationScale);
 
-  useEffect(() => { demoPatternRef.current = demoPattern }, [demoPattern])
-  useEffect(() => { stressMagRef.current = stressMagnitude }, [stressMagnitude])
-  useEffect(() => { birefCoeffRef.current = birefringenceCoeff }, [birefringenceCoeff])
-  useEffect(() => { rotationRef.current = rotationAngle }, [rotationAngle])
-  useEffect(() => { retardationScaleRef.current = retardationScale }, [retardationScale])
+  useEffect(() => {
+    demoPatternRef.current = demoPattern;
+  }, [demoPattern]);
+  useEffect(() => {
+    stressMagRef.current = stressMagnitude;
+  }, [stressMagnitude]);
+  useEffect(() => {
+    birefCoeffRef.current = birefringenceCoeff;
+  }, [birefringenceCoeff]);
+  useEffect(() => {
+    rotationRef.current = rotationAngle;
+  }, [rotationAngle]);
+  useEffect(() => {
+    retardationScaleRef.current = retardationScale;
+  }, [retardationScale]);
 
+  const birefringenceParams: BirefringenceParams = useMemo(
+    () => ({
+      subtractBackground: false,
+      sensitivity,
+      rotationCompensation: 0,
+    }),
+    [sensitivity]
+  );
+
+  /* ─── Camera controls ─── */
   const startCamera = useCallback(async () => {
     try {
-      const mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: 640, height: 480 }
-      })
-      setStream(mediaStream)
+      setCameraError(null);
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: "environment",
+          width: { ideal: 640 },
+          height: { ideal: 480 },
+        },
+      });
+      streamRef.current = stream;
       if (videoRef.current) {
-        videoRef.current.srcObject = mediaStream
-        videoRef.current.play()
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
       }
-      setCameraActive(true)
+      setStreaming(true);
     } catch {
-      // Camera not available - stay in demo mode
-      setCameraActive(false)
+      setCameraError("无法访问摄像头。请确认已授权并使用支持摄像头的设备。");
+      setStreaming(false);
     }
-  }, [])
+  }, []);
 
   const stopCamera = useCallback(() => {
-    if (stream) {
-      stream.getTracks().forEach(t => t.stop())
-      setStream(null)
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
     }
-    setCameraActive(false)
-  }, [stream])
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    setStreaming(false);
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
+    }
+  }, []);
 
-  // Process video frames for stress birefringence visualization (camera mode)
+  /* ─── Camera processing loop ─── */
   useEffect(() => {
-    if (!cameraActive || !videoRef.current || !canvasRef.current) return
-
-    const video = videoRef.current
-    const canvas = canvasRef.current
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-
-    let animId: number
+    if (!streaming || !videoRef.current) return;
 
     const processFrame = () => {
-      if (video.readyState < 2) {
-        animId = requestAnimationFrame(processFrame)
-        return
+      const video = videoRef.current;
+      if (!video || video.paused || video.ended) {
+        animFrameRef.current = requestAnimationFrame(processFrame);
+        return;
       }
 
-      canvas.width = video.videoWidth
-      canvas.height = video.videoHeight
-      ctx.drawImage(video, 0, 0)
+      const vw = video.videoWidth;
+      const vh = video.videoHeight;
+      if (vw === 0 || vh === 0) {
+        animFrameRef.current = requestAnimationFrame(processFrame);
+        return;
+      }
 
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
-      const data = imageData.data
-
-      for (let i = 0; i < data.length; i += 4) {
-        const r = data[i]
-        const g = data[i + 1]
-        const b = data[i + 2]
-
-        const diff = Math.abs(r - g) + Math.abs(g - b) + Math.abs(r - b)
-        const retardation = (diff / (3 * 255)) * retardationScale
-
-        if (retardation > 5) {
-          const [cr, cg, cb] = stressColorMap(retardation)
-          const alpha = Math.min(1, retardation / (retardationScale * 0.3))
-          data[i] = Math.round(r * (1 - alpha) + cr * alpha)
-          data[i + 1] = Math.round(g * (1 - alpha) + cg * alpha)
-          data[i + 2] = Math.round(b * (1 - alpha) + cb * alpha)
+      // Draw original
+      if (showOriginal && originalCanvasRef.current) {
+        const canvas = originalCanvasRef.current;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          canvas.width = vw;
+          canvas.height = vh;
+          ctx.drawImage(video, 0, 0);
         }
       }
 
-      ctx.putImageData(imageData, 0, 0)
-      animId = requestAnimationFrame(processFrame)
-    }
+      // Process and draw
+      if (showProcessed && processedCanvasRef.current) {
+        const canvas = processedCanvasRef.current;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          canvas.width = vw;
+          canvas.height = vh;
+          ctx.drawImage(video, 0, 0);
+          const imageData = ctx.getImageData(0, 0, vw, vh);
+          const processed = processBirefringenceFrame(imageData, birefringenceParams);
+          ctx.putImageData(processed, 0, 0);
+        }
+      }
 
-    animId = requestAnimationFrame(processFrame)
-    return () => cancelAnimationFrame(animId)
-  }, [cameraActive, retardationScale])
+      animFrameRef.current = requestAnimationFrame(processFrame);
+    };
 
-  // Demo mode rendering
+    animFrameRef.current = requestAnimationFrame(processFrame);
+
+    return () => {
+      if (animFrameRef.current) {
+        cancelAnimationFrame(animFrameRef.current);
+      }
+    };
+  }, [streaming, showOriginal, showProcessed, birefringenceParams]);
+
+  /* ─── Demo mode rendering ─── */
   useEffect(() => {
-    if (cameraActive || !canvasRef.current) return
+    if (streaming || !demoCanvasRef.current) return;
 
-    const canvas = canvasRef.current
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
+    const canvas = demoCanvasRef.current;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
 
-    const W = 400
-    const H = 300
-    canvas.width = W
-    canvas.height = H
+    const W = 400;
+    const H = 300;
+    canvas.width = W;
+    canvas.height = H;
 
-    const cx = W / 2
-    const cy = H / 2
-    const rotRad = () => (rotationRef.current * Math.PI) / 180
+    const cx = W / 2;
+    const cy = H / 2;
+    const rotRad = () => (rotationRef.current * Math.PI) / 180;
 
-    let animId: number
+    let animId: number;
 
     const renderDemo = () => {
-      const pattern = demoPatternRef.current
-      const sf = stressMagRef.current
-      const bc = birefCoeffRef.current
-      const rot = rotRad()
-      const scale = retardationScaleRef.current
+      const pattern = demoPatternRef.current;
+      const sf = stressMagRef.current;
+      const bc = birefCoeffRef.current;
+      const rot = rotRad();
+      const scale = retardationScaleRef.current;
 
-      const imageData = ctx.createImageData(W, H)
-      const data = imageData.data
+      const imageData = ctx.createImageData(W, H);
+      const data = imageData.data;
 
-      // Select pattern generator
-      let getRetardation: typeof diskCompressionRetardation
+      let getRetardation: typeof diskCompressionRetardation;
       switch (pattern) {
-        case 'disk':
-          getRetardation = diskCompressionRetardation
-          break
-        case 'plate':
-          getRetardation = plateTensionRetardation
-          break
-        case 'beam':
-          getRetardation = beamBendingRetardation
-          break
-        case 'residual':
-          getRetardation = residualStressRetardation
-          break
+        case "disk":
+          getRetardation = diskCompressionRetardation;
+          break;
+        case "plate":
+          getRetardation = plateTensionRetardation;
+          break;
+        case "beam":
+          getRetardation = beamBendingRetardation;
+          break;
+        case "residual":
+          getRetardation = residualStressRetardation;
+          break;
       }
 
       for (let y = 0; y < H; y++) {
         for (let x = 0; x < W; x++) {
-          const idx = (y * W + x) * 4
-          const ret = getRetardation(x, y, cx, cy, W, H, sf, bc, rot)
-
-          // Scale retardation relative to the max scale
-          const scaledRet = (ret / 1000) * scale
+          const idx = (y * W + x) * 4;
+          const ret = getRetardation(x, y, cx, cy, W, H, sf, bc, rot);
+          const scaledRet = (ret / 1000) * scale;
 
           if (scaledRet > 2) {
-            const [cr, cg, cb] = stressColorMap(scaledRet)
-            data[idx] = cr
-            data[idx + 1] = cg
-            data[idx + 2] = cb
-            data[idx + 3] = 255
+            const [cr, cg, cb] = stressColorMap(scaledRet);
+            data[idx] = cr;
+            data[idx + 1] = cg;
+            data[idx + 2] = cb;
+            data[idx + 3] = 255;
           } else {
-            // Background for zero-stress regions - dark as in crossed polarizers
-            const brightness = 15 + Math.round(scaledRet * 4)
-            data[idx] = brightness
-            data[idx + 1] = brightness
-            data[idx + 2] = brightness
-            data[idx + 3] = 255
+            const brightness = 15 + Math.round(scaledRet * 4);
+            data[idx] = brightness;
+            data[idx + 1] = brightness;
+            data[idx + 2] = brightness;
+            data[idx + 3] = 255;
           }
         }
       }
 
-      ctx.putImageData(imageData, 0, 0)
+      ctx.putImageData(imageData, 0, 0);
 
       // Draw pattern label on canvas
-      ctx.font = `10px ${FONT.replace(/var\(--font-ibm-plex-sans\)/, 'IBM Plex Sans, sans-serif')}`
-      ctx.fillStyle = '#AAAAAA'
-      ctx.textAlign = 'right'
-      ctx.fillText(DEMO_PATTERN_LABELS[pattern], W - 8, H - 8)
+      ctx.font = "10px IBM Plex Sans, sans-serif";
+      ctx.fillStyle = "#AAAAAA";
+      ctx.textAlign = "right";
+      ctx.fillText(DEMO_PATTERN_LABELS[pattern], W - 8, H - 8);
 
-      animId = requestAnimationFrame(renderDemo)
-    }
+      animId = requestAnimationFrame(renderDemo);
+    };
 
-    animId = requestAnimationFrame(renderDemo)
-    return () => cancelAnimationFrame(animId)
-  }, [cameraActive])
+    animId = requestAnimationFrame(renderDemo);
+    return () => cancelAnimationFrame(animId);
+  }, [streaming]);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (stream) {
-        stream.getTracks().forEach(t => t.stop())
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
       }
-    }
-  }, [stream])
+    };
+  }, []);
 
   return (
-    <div className="min-h-screen flex flex-col" style={{ background: '#FFFFFF' }}>
-      {/* Header */}
-      <div className="flex-shrink-0 flex items-center" style={{
-        height: '48px', backgroundColor: '#FFFFFF',
-        borderBottom: '1px solid #CCCCCC', paddingLeft: '24px', paddingRight: '24px',
-      }}>
-        <button onClick={onBack} style={{
-          fontFamily: FONT, fontSize: '12px', fontWeight: 400, color: '#555555',
-          background: 'none', border: 'none', cursor: 'pointer',
-          display: 'flex', alignItems: 'center', gap: '4px',
-          transition: 'color 200ms ease-out',
-        }} onMouseEnter={e => (e.currentTarget.style.color = '#1A1A1A')}
-           onMouseLeave={e => (e.currentTarget.style.color = '#555555')}>
+    <div className="flex flex-col h-full" style={{ background: "#FFFFFF" }}>
+      {/* ─── Header ─── */}
+      <div
+        className="flex-shrink-0 flex items-center h-12 border-b border-[#d4d8e0] px-6"
+        style={{ background: "#FFFFFF" }}
+      >
+        <button
+          onClick={onBack}
+          className="text-[12px] text-[#6b7280] hover:text-[#2d3142] transition-colors bg-transparent border-none cursor-pointer flex items-center gap-1"
+        >
           ← 返回
         </button>
-        <span style={{ margin: '0 12px', color: '#D0D0D0' }}>|</span>
-        <h1 style={{ fontFamily: FONT, fontSize: '20px', fontWeight: 600, color: '#1A1A1A', margin: 0 }}>
-          偏振视觉扫描仪
-        </h1>
-        {!cameraActive && (
-          <span style={{
-            marginLeft: '12px', fontSize: '10px', color: '#888888',
-            fontFamily: FONT, backgroundColor: '#F0F3F6',
-            padding: '2px 8px', borderRadius: '2px', border: '1px solid #E8ECF0',
-          }}>
+        <span className="mx-3 text-[#d4d8e0]">|</span>
+        <h1 className="text-[18px] font-semibold text-[#2d3142] m-0">偏振视觉扫描仪</h1>
+        {!streaming && (
+          <span className="ml-3 text-[10px] text-[#9ca3af] bg-[#f0f3f6] px-2 py-0.5 rounded border border-[#e8ecf0]">
             演示模式
           </span>
         )}
       </div>
 
-      <div className="flex flex-1" style={{ minHeight: 0 }}>
-        {/* Left: Camera / Demo view */}
-        <div className="flex-1 dot-grid" style={{
-          display: 'flex', flexDirection: 'column', padding: '16px',
-          alignItems: 'center', justifyContent: 'center',
-        }}>
-          <div style={{ position: 'relative', maxWidth: '640px', width: '100%' }}>
-            {/* Hidden video element */}
-            <video ref={videoRef} style={{ display: 'none' }} playsInline muted />
-            {/* Output canvas - used by both camera and demo mode */}
-            <canvas ref={canvasRef} style={{
-              width: '100%', maxWidth: '640px', border: '1px solid #D0D0D0',
-              backgroundColor: '#0F0F0F', display: 'block',
-            }} />
-
-            {/* Camera-only placeholder overlay - only when camera was never started */}
-            {cameraActive && (
-              <div style={{
-                position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-                display: 'flex', flexDirection: 'column',
-                alignItems: 'center', justifyContent: 'center',
-                backgroundColor: '#FAFAFA', border: '1px solid #D0D0D0',
-                pointerEvents: 'none',
-              }}>
-                <div style={{ fontSize: '10px', color: '#888888', fontFamily: FONT }}>
-                  正在处理摄像头画面...
-                </div>
+      {/* ─── Main Content ─── */}
+      <div className="flex flex-1 min-h-0">
+      {/* ─── Left Control Panel ─── */}
+      <div className="w-72 border-r border-[#d4d8e0] bg-[#f8f9fb] p-4 overflow-y-auto shrink-0">
+        <div className="space-y-4">
+          {/* Camera Control */}
+          <div>
+            <h3
+              className="text-[11px] font-semibold text-[#6b7280] uppercase tracking-wider mb-2.5"
+              style={{ fontFamily: "var(--font-ibm-plex-mono)" }}
+            >
+              摄像头控制
+            </h3>
+            {cameraError && (
+              <div className="bg-red-50 border border-red-200 rounded p-2 mb-3">
+                <p className="text-[11px] text-red-600">{cameraError}</p>
               </div>
             )}
-          </div>
-
-          {/* Color scale bar */}
-          <div style={{ marginTop: '12px', width: '100%', maxWidth: '640px' }}>
-            <div style={{ fontSize: '10px', color: '#555555', fontFamily: FONT, marginBottom: '4px' }}>
-              应力光学延迟量色标 (nm)
-            </div>
-            <svg width="100%" height="16" viewBox="0 0 600 16" preserveAspectRatio="none">
-              {Array.from({ length: 600 }, (_, i) => {
-                const ret = (i / 600) * retardationScale
-                const [r, g, b] = stressColorMap(ret)
-                return <rect key={i} x={i} y="0" width="1" height="16" fill={`rgb(${r},${g},${b})`} />
-              })}
-            </svg>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '7px', color: '#888888', fontFamily: FONT }}>
-              <span className="tabular-nums">0</span>
-              <span className="tabular-nums">{Math.round(retardationScale / 4)}</span>
-              <span className="tabular-nums">{Math.round(retardationScale / 2)}</span>
-              <span className="tabular-nums">{Math.round(retardationScale * 3 / 4)}</span>
-              <span className="tabular-nums">{retardationScale}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Right: Controls */}
-        <div className="custom-scrollbar" style={{
-          width: '280px', flexShrink: 0, backgroundColor: '#FAFAFA',
-          borderLeft: '1px solid #D0D0D0', overflowY: 'auto', padding: '16px',
-        }}>
-          {/* Camera control */}
-          <div style={{ marginBottom: '16px' }}>
-            <SectionTitle>摄像头控制</SectionTitle>
-            <button onClick={cameraActive ? stopCamera : startCamera} style={{
-              width: '100%', fontSize: '10px', padding: '8px',
-              borderRadius: '2px',
-              border: `1px solid ${cameraActive ? '#CC0000' : '#333333'}`,
-              backgroundColor: cameraActive ? '#FFF0F0' : '#F0F3F6',
-              color: cameraActive ? '#CC0000' : '#1A1A1A',
-              cursor: 'pointer', fontFamily: FONT,
-              transition: 'border-color 200ms ease-out',
-            }}>
-              {cameraActive ? '✕ 关闭摄像头' : '◉ 启动摄像头'}
-            </button>
-            {!cameraActive && (
-              <div style={{
-                marginTop: '6px', fontSize: '9px', color: '#888888', fontFamily: FONT,
-                backgroundColor: '#F0F3F6', padding: '4px 8px', borderRadius: '2px',
-                border: '1px solid #E8ECF0',
-              }}>
+            <Button
+              onClick={streaming ? stopCamera : startCamera}
+              className={`w-full h-9 text-[12px] ${
+                streaming
+                  ? "bg-[#dc2626] hover:bg-[#b91c1c] text-white"
+                  : "bg-[#2d3142] hover:bg-[#3d4152] text-white"
+              }`}
+            >
+              {streaming ? "停止扫描" : "启动摄像头扫描"}
+            </Button>
+            {!streaming && (
+              <div className="mt-2 text-[9px] text-[#9ca3af] bg-white border border-[#d4d8e0] rounded px-2 py-1.5">
                 无摄像头时自动进入演示模式
               </div>
             )}
           </div>
 
-          {/* Demo mode controls - only when camera is NOT active */}
-          {!cameraActive && (
-            <>
-              {/* Pattern selector */}
-              <div style={{ marginBottom: '16px' }}>
-                <SectionTitle>演示模式</SectionTitle>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-                  {(Object.keys(DEMO_PATTERN_LABELS) as DemoPattern[]).map(key => (
-                    <button key={key} onClick={() => setDemoPattern(key)} style={{
-                      fontSize: '10px', padding: '6px 4px', borderRadius: '2px',
-                      border: `1px solid ${demoPattern === key ? '#333333' : '#D0D0D0'}`,
-                      backgroundColor: demoPattern === key ? '#E8ECF0' : '#FFFFFF',
-                      color: demoPattern === key ? '#1A1A1A' : '#555555',
-                      cursor: 'pointer', fontFamily: FONT,
-                      transition: 'all 150ms ease-out',
-                    }}>
-                      {DEMO_PATTERN_LABELS[key]}
-                    </button>
-                  ))}
-                </div>
-                <div style={{
-                  marginTop: '8px', fontSize: '9px', color: '#888888',
-                  fontFamily: FONT, lineHeight: '1.5',
-                }}>
-                  {DEMO_PATTERN_DESC[demoPattern]}
-                </div>
+          {/* Processing Parameters */}
+          <div className="border-t border-[#d4d8e0] pt-3">
+            <h3
+              className="text-[11px] font-semibold text-[#6b7280] uppercase tracking-wider mb-2.5"
+              style={{ fontFamily: "var(--font-ibm-plex-mono)" }}
+            >
+              处理参数
+            </h3>
+            <div className="space-y-1.5 mb-3">
+              <div className="flex items-center justify-between">
+                <Label className="text-[12px] text-[#2d3142]">灵敏度</Label>
+                <span className="text-[11px] text-[#6b7280] tabular-nums">
+                  {sensitivity.toFixed(1)}×
+                </span>
               </div>
-
-              {/* Stress magnitude slider */}
-              <div style={{ marginBottom: '16px' }}>
-                <SectionTitle>应力大小</SectionTitle>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <input type="range" min="1" max="10" step="0.5" value={stressMagnitude}
-                    onChange={e => setStressMagnitude(Number(e.target.value))}
-                    style={{ flex: 1, accentColor: '#333333' }}
-                  />
-                  <span className="tabular-nums" style={{ fontSize: '10px', color: '#1A1A1A', fontFamily: FONT, minWidth: '24px' }}>
-                    {stressMagnitude}
-                  </span>
-                </div>
-                <div style={{ fontSize: '8px', color: '#AAAAAA', fontFamily: FONT, marginTop: '2px' }}>
-                  控制条纹级次/密度
-                </div>
-              </div>
-
-              {/* Birefringence coefficient slider */}
-              <div style={{ marginBottom: '16px' }}>
-                <SectionTitle>双折射系数</SectionTitle>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <input type="range" min="0.1" max="3.0" step="0.1" value={birefringenceCoeff}
-                    onChange={e => setBirefringenceCoeff(Number(e.target.value))}
-                    style={{ flex: 1, accentColor: '#333333' }}
-                  />
-                  <span className="tabular-nums" style={{ fontSize: '10px', color: '#1A1A1A', fontFamily: FONT, minWidth: '28px' }}>
-                    {birefringenceCoeff.toFixed(1)}
-                  </span>
-                </div>
-                <div style={{ fontSize: '8px', color: '#AAAAAA', fontFamily: FONT, marginTop: '2px' }}>
-                  控制颜色偏移量
-                </div>
-              </div>
-
-              {/* Rotation angle slider */}
-              <div style={{ marginBottom: '16px' }}>
-                <SectionTitle>旋转角度</SectionTitle>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <input type="range" min="0" max="360" step="5" value={rotationAngle}
-                    onChange={e => setRotationAngle(Number(e.target.value))}
-                    style={{ flex: 1, accentColor: '#333333' }}
-                  />
-                  <span className="tabular-nums" style={{ fontSize: '10px', color: '#1A1A1A', fontFamily: FONT, minWidth: '30px' }}>
-                    {rotationAngle}°
-                  </span>
-                </div>
-                <div style={{ fontSize: '8px', color: '#AAAAAA', fontFamily: FONT, marginTop: '2px' }}>
-                  旋转样品/图案方向
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* Retardation scale - always visible */}
-          <div style={{ marginBottom: '16px' }}>
-            <SectionTitle>延迟量范围</SectionTitle>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <input type="range" min="100" max="2000" step="50" value={retardationScale}
-                onChange={e => setRetardationScale(Number(e.target.value))}
-                style={{ flex: 1, accentColor: '#333333' }}
+              <Slider
+                value={[sensitivity]}
+                onValueChange={([v]) => setSensitivity(v)}
+                min={0.5}
+                max={3}
+                step={0.1}
               />
-              <span className="tabular-nums" style={{ fontSize: '10px', color: '#1A1A1A', fontFamily: FONT, minWidth: '40px' }}>
-                {retardationScale}nm
-              </span>
+            </div>
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <Label className="text-[12px] text-[#2d3142]">延迟量范围</Label>
+                <span className="text-[11px] text-[#6b7280] tabular-nums">
+                  {retardationScale} nm
+                </span>
+              </div>
+              <Slider
+                value={[retardationScale]}
+                onValueChange={([v]) => setRetardationScale(v)}
+                min={100}
+                max={2000}
+                step={50}
+              />
             </div>
           </div>
 
-          {/* Instructions */}
-          <div style={{ marginBottom: '16px' }}>
-            <SectionTitle>使用说明</SectionTitle>
-            <div style={{
-              fontSize: '9px', color: '#888888', fontFamily: FONT, lineHeight: '1.7',
-            }}>
-              {!cameraActive ? (
-                <>
-                  <div style={{ fontWeight: 500, color: '#555555', marginBottom: '4px' }}>
-                    演示模式
-                  </div>
-                  <div>1. 选择预设应力图样</div>
-                  <div>2. 调节应力大小、双折射系数和旋转角度</div>
-                  <div>3. 观察应力双折射伪彩色分布变化</div>
-                  <div>4. 启动摄像头可切换为实时模式</div>
-                  <div style={{ marginTop: '8px', borderTop: '1px solid #E8ECF0', paddingTop: '6px' }}>
-                    应力集中处颜色更鲜艳
-                  </div>
-                  <div>零应力区域呈暗灰色</div>
-                </>
+          {/* Demo Mode Controls (only when camera not active) */}
+          {!streaming && (
+            <div className="border-t border-[#d4d8e0] pt-3">
+              <h3
+                className="text-[11px] font-semibold text-[#6b7280] uppercase tracking-wider mb-2.5"
+                style={{ fontFamily: "var(--font-ibm-plex-mono)" }}
+              >
+                演示模式
+              </h3>
+              <div className="grid grid-cols-2 gap-1.5 mb-3">
+                {(Object.keys(DEMO_PATTERN_LABELS) as DemoPattern[]).map((key) => (
+                  <Button
+                    key={key}
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setDemoPattern(key)}
+                    className={`h-7 text-[10px] px-2 ${
+                      demoPattern === key
+                        ? "bg-[#2d3142] text-white border-[#2d3142] hover:bg-[#3d4152] hover:text-white"
+                        : "bg-white text-[#6b7280] border-[#d4d8e0] hover:bg-[#f0f1f3]"
+                    }`}
+                  >
+                    {DEMO_PATTERN_LABELS[key]}
+                  </Button>
+                ))}
+              </div>
+              <p className="text-[9px] text-[#9ca3af] leading-relaxed mb-3">
+                {DEMO_PATTERN_DESC[demoPattern]}
+              </p>
+
+              {/* Stress Magnitude Slider */}
+              <div className="space-y-1.5 mb-3">
+                <div className="flex items-center justify-between">
+                  <Label className="text-[12px] text-[#2d3142]">应力大小</Label>
+                  <span className="text-[11px] text-[#6b7280] tabular-nums">
+                    {stressMagnitude}
+                  </span>
+                </div>
+                <Slider
+                  value={[stressMagnitude]}
+                  onValueChange={([v]) => setStressMagnitude(v)}
+                  min={1}
+                  max={10}
+                  step={0.5}
+                />
+                <p className="text-[8px] text-[#9ca3af]">控制条纹级次/密度</p>
+              </div>
+
+              {/* Birefringence Coefficient Slider */}
+              <div className="space-y-1.5 mb-3">
+                <div className="flex items-center justify-between">
+                  <Label className="text-[12px] text-[#2d3142]">双折射系数</Label>
+                  <span className="text-[11px] text-[#6b7280] tabular-nums">
+                    {birefringenceCoeff.toFixed(1)}
+                  </span>
+                </div>
+                <Slider
+                  value={[birefringenceCoeff]}
+                  onValueChange={([v]) => setBirefringenceCoeff(v)}
+                  min={0.1}
+                  max={3}
+                  step={0.1}
+                />
+                <p className="text-[8px] text-[#9ca3af]">控制颜色偏移量</p>
+              </div>
+
+              {/* Rotation Angle Slider */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label className="text-[12px] text-[#2d3142]">旋转角度</Label>
+                  <span className="text-[11px] text-[#6b7280] tabular-nums">
+                    {rotationAngle}°
+                  </span>
+                </div>
+                <Slider
+                  value={[rotationAngle]}
+                  onValueChange={([v]) => setRotationAngle(v)}
+                  min={0}
+                  max={360}
+                  step={5}
+                />
+                <p className="text-[8px] text-[#9ca3af]">旋转样品/图案方向</p>
+              </div>
+            </div>
+          )}
+
+          {/* Display Options (only when camera active) */}
+          {streaming && (
+            <div className="border-t border-[#d4d8e0] pt-3">
+              <h3
+                className="text-[11px] font-semibold text-[#6b7280] uppercase tracking-wider mb-2.5"
+                style={{ fontFamily: "var(--font-ibm-plex-mono)" }}
+              >
+                显示选项
+              </h3>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-[12px] text-[#2d3142]">原始画面</Label>
+                  <Switch checked={showOriginal} onCheckedChange={setShowOriginal} />
+                </div>
+                <div className="flex items-center justify-between">
+                  <Label className="text-[12px] text-[#2d3142]">应力图案</Label>
+                  <Switch checked={showProcessed} onCheckedChange={setShowProcessed} />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Michel-Lévy Chart */}
+          <div className="border-t border-[#d4d8e0] pt-3">
+            <h3
+              className="text-[11px] font-semibold text-[#6b7280] uppercase tracking-wider mb-2.5"
+              style={{ fontFamily: "var(--font-ibm-plex-mono)" }}
+            >
+              Michel-Lévy 干涉色表
+            </h3>
+            <MichelLevyChart width={240} height={44} />
+            <p className="text-[10px] text-[#9ca3af] mt-1.5 leading-relaxed">
+              颜色对应光程差(延迟量)。黑→灰→白→淡黄→红→蓝为标准应力光学配色。
+            </p>
+          </div>
+
+          {/* Usage Guide */}
+          <div className="border-t border-[#d4d8e0] pt-3">
+            <h3
+              className="text-[11px] font-semibold text-[#6b7280] uppercase tracking-wider mb-2.5"
+              style={{ fontFamily: "var(--font-ibm-plex-mono)" }}
+            >
+              使用指南
+            </h3>
+            <div className="bg-white border border-[#d4d8e0] rounded p-2.5">
+              {streaming ? (
+                <ol className="text-[10.5px] text-[#4a4a5a] space-y-1.5 leading-relaxed list-decimal list-inside">
+                  <li>将样品置于正交偏光镜之间</li>
+                  <li>启动摄像头，对准样品</li>
+                  <li>调节灵敏度，观察应力双折射图案</li>
+                  <li>应力集中处颜色更鲜艳，零应力区域呈暗灰色</li>
+                </ol>
               ) : (
-                <>
-                  <div>1. 将样品置于正交偏光镜之间</div>
-                  <div>2. 启动摄像头对准样品</div>
-                  <div>3. 系统自动提取应力双折射图案</div>
-                  <div>4. 伪彩色显示延迟量分布</div>
-                  <div style={{ marginTop: '8px', borderTop: '1px solid #E8ECF0', paddingTop: '6px' }}>
-                    适用对象: 透明塑料、玻璃、晶体等
-                  </div>
-                  <div>应力集中处颜色更鲜艳</div>
-                  <div>零应力区域呈暗灰色</div>
-                </>
+                <ol className="text-[10.5px] text-[#4a4a5a] space-y-1.5 leading-relaxed list-decimal list-inside">
+                  <li>选择预设应力图样</li>
+                  <li>调节应力大小、双折射系数和旋转角度</li>
+                  <li>观察应力双折射伪彩色分布变化</li>
+                  <li>启动摄像头可切换为实时模式</li>
+                </ol>
               )}
             </div>
           </div>
 
-          {/* Color chart legend */}
-          <div>
-            <SectionTitle>Michel-Lévy色谱</SectionTitle>
-            <div style={{
-              fontSize: '9px', color: '#888888', fontFamily: FONT, lineHeight: '1.8',
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <span style={{ width: '12px', height: '12px', backgroundColor: '#1A1A1A', borderRadius: '1px' }} />
-                0 nm - 零延迟
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <span style={{ width: '12px', height: '12px', backgroundColor: '#888888', borderRadius: '1px' }} />
-                ~50 nm - 灰
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <span style={{ width: '12px', height: '12px', backgroundColor: '#FFFFFF', border: '1px solid #D0D0D0', borderRadius: '1px' }} />
-                ~200 nm - 白
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <span style={{ width: '12px', height: '12px', backgroundColor: '#E8D050', borderRadius: '1px' }} />
-                ~300 nm - 淡黄
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <span style={{ width: '12px', height: '12px', backgroundColor: '#CC4444', borderRadius: '1px' }} />
-                ~500 nm - 红
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <span style={{ width: '12px', height: '12px', backgroundColor: '#4455AA', borderRadius: '1px' }} />
-                ~600 nm - 蓝
-              </div>
+          {/* Sample Suggestions */}
+          <div className="border-t border-[#d4d8e0] pt-3">
+            <h3
+              className="text-[11px] font-semibold text-[#6b7280] uppercase tracking-wider mb-2.5"
+              style={{ fontFamily: "var(--font-ibm-plex-mono)" }}
+            >
+              推荐样品
+            </h3>
+            <div className="grid grid-cols-2 gap-1.5">
+              {[
+                { name: "透明塑料", icon: "□" },
+                { name: "胶带", icon: "▬" },
+                { name: "水果表皮", icon: "○" },
+                { name: "眼镜片", icon: "◇" },
+                { name: "CD盒", icon: "▢" },
+                { name: "冰块", icon: "△" },
+              ].map((item) => (
+                <div
+                  key={item.name}
+                  className="bg-white border border-[#d4d8e0] rounded px-2 py-1.5 text-center"
+                >
+                  <span className="text-[14px] text-[#9ca3af]">{item.icon}</span>
+                  <p className="text-[9px] text-[#6b7280] mt-0.5">{item.name}</p>
+                </div>
+              ))}
             </div>
           </div>
         </div>
       </div>
-    </div>
-  )
-}
 
-function SectionTitle({ children }: { children: React.ReactNode }) {
-  return (
-    <div style={{
-      fontSize: '12px', fontWeight: 600, color: '#1A1A1A',
-      fontFamily: FONT, marginBottom: '8px', paddingBottom: '6px',
-      borderBottom: '1px solid #E8ECF0',
-    }}>
-      {children}
+      {/* ─── Right Visualization Area ─── */}
+      <div className="flex-1 flex flex-col items-center justify-center p-6 bg-white">
+        {/* Hidden video element */}
+        <video ref={videoRef} className="hidden" playsInline muted />
+
+        {!streaming ? (
+          /* ─── Demo Mode View ─── */
+          <div className="flex flex-col items-center gap-4">
+            {/* Demo canvas */}
+            <div className="relative">
+              <canvas
+                ref={demoCanvasRef}
+                className="border border-[#d4d8e0] bg-[#0F0F0F]"
+                style={{ maxWidth: "100%", height: "auto", maxHeight: 400 }}
+              />
+              {/* 演示模式 badge overlay */}
+              <div className="absolute top-2 left-2 text-[9px] text-[#888888] bg-[#f8f9fb]/80 px-1.5 py-0.5 rounded border border-[#d4d8e0]">
+                演示模式
+              </div>
+            </div>
+
+            {/* Idle state description when demo hasn't rendered */}
+            <div className="flex flex-col items-center gap-3">
+              <div className="w-20 h-20 border-2 border-dashed border-[#d4d8e0] rounded-lg flex items-center justify-center">
+                <svg width="36" height="36" viewBox="0 0 48 48" fill="none">
+                  <rect
+                    x="8"
+                    y="4"
+                    width="32"
+                    height="40"
+                    rx="3"
+                    stroke="#9ca3af"
+                    strokeWidth="1.5"
+                    fill="none"
+                  />
+                  <circle cx="24" cy="20" r="8" stroke="#9ca3af" strokeWidth="1.2" fill="none" />
+                  <circle cx="24" cy="20" r="3" fill="#d4d8e0" />
+                  <line x1="18" y1="36" x2="30" y2="36" stroke="#d4d8e0" strokeWidth="1" />
+                </svg>
+              </div>
+              <div className="text-center">
+                <p className="text-[11px] text-[#9ca3af] max-w-xs leading-relaxed">
+                  点击"启动摄像头扫描"切换实时模式。当前为演示模式，
+                  可调节左侧参数观察应力双折射图案。
+                </p>
+              </div>
+            </div>
+
+            {/* Michel-Lévy reference below demo canvas */}
+            <div className="mt-2">
+              <div
+                className="text-[9px] text-[#9ca3af] text-center mb-1"
+                style={{ fontFamily: "var(--font-ibm-plex-mono)" }}
+              >
+                Michel-Lévy 干涉色参考
+              </div>
+              <MichelLevyChart width={400} height={36} />
+            </div>
+          </div>
+        ) : (
+          /* ─── Camera Active View ─── */
+          <div className="flex gap-6 items-start w-full justify-center">
+            {showOriginal && (
+              <div className="flex flex-col items-center">
+                <div
+                  className="text-[10px] text-[#9ca3af] uppercase tracking-wider mb-2"
+                  style={{ fontFamily: "var(--font-ibm-plex-mono)" }}
+                >
+                  原始画面
+                </div>
+                <canvas
+                  ref={originalCanvasRef}
+                  className="border border-[#d4d8e0] bg-black"
+                  style={{ maxWidth: "100%", height: "auto", maxHeight: 360 }}
+                />
+              </div>
+            )}
+
+            {showProcessed && (
+              <div className="flex flex-col items-center">
+                <div
+                  className="text-[10px] text-[#9ca3af] uppercase tracking-wider mb-2"
+                  style={{ fontFamily: "var(--font-ibm-plex-mono)" }}
+                >
+                  应力双折射图案
+                </div>
+                <canvas
+                  ref={processedCanvasRef}
+                  className="border border-[#d4d8e0] bg-[#f0f0f0]"
+                  style={{ maxWidth: "100%", height: "auto", maxHeight: 360 }}
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Michel-Lévy reference at bottom when camera active */}
+        {streaming && (
+          <div className="mt-4">
+            <div
+              className="text-[9px] text-[#9ca3af] text-center mb-1"
+              style={{ fontFamily: "var(--font-ibm-plex-mono)" }}
+            >
+              Michel-Lévy 干涉色参考
+            </div>
+            <MichelLevyChart width={400} height={36} />
+          </div>
+        )}
+      </div>
+      </div>
     </div>
-  )
+  );
 }

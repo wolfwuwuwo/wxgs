@@ -28,6 +28,10 @@ const GaussianBeamTracer = dynamic(
   () => import('@/components/simulations/GaussianBeamTracer'),
   { ssr: false }
 )
+const RayTracingLab = dynamic(
+  () => import('@/components/simulations/RayTracingLab'),
+  { ssr: false }
+)
 
 type ViewId =
   | 'home'
@@ -142,7 +146,7 @@ const cards = [
 
 const physicalSubModules: { id: ViewId; title: string; description: string; iconText: string }[] = [
   { id: 'physical-jones', title: '偏振琼斯矩阵实验室', description: '自由组合偏振片、半波片、1/4波片，旋转角度，动态绘制偏振椭圆，追踪琼斯矩阵与斯托克斯参数', iconText: 'J' },
-  { id: 'physical-diffraction', title: '全波前矢量衍射工坊', description: '选择口径类型与尺寸，2D FFT矢量衍射积分，即时生成菲涅耳与夫琅禾费衍射强度图', iconText: 'D' },
+  { id: 'physical-diffraction', title: '全波前矢量衍射工坊', description: '角谱衍射理论+矢量衍射(Ex/Ey/Ez)，手绘口径+高斯切趾，巴比涅/光栅/瑞利/全息五大实验模式', iconText: 'D' },
   { id: 'physical-polarimeter', title: '旋光仪实验', description: '虚拟经典旋光仪，零位法测旋光度，钠灯光源→起偏器→样品管→检偏器→探测器，预设葡萄糖、蔗糖等', iconText: 'α' },
   { id: 'physical-scanner', title: '偏振视觉扫描仪', description: '调用摄像头，实时提取应力双折射，伪彩色应力光学标准配色，如偏光显微镜视场', iconText: '◎' },
   { id: 'physical-lcvalve', title: '液晶旋光光阀实验台', description: 'Oseen-Frank弹性理论+Berreman 4×4矩阵法，TN/IPS/VA模式对比，响应时间测量，视角特性，灰度寻址', iconText: 'LC' },
@@ -211,6 +215,9 @@ export default function Home() {
   if (currentView === 'modern-gaussian') {
     return <div className={`min-h-screen flex flex-col ${fadeIn ? 'page-fade-in' : ''}`} style={{ background: '#FFFFFF' }}><GaussianBeamTracer onBack={() => goBack('modern-gaussian')} /></div>
   }
+  if (currentView === 'geometric-raytracing') {
+    return <div className={`min-h-screen flex flex-col ${fadeIn ? 'page-fade-in' : ''}`} style={{ background: '#FFFFFF' }}><RayTracingLab onBack={() => goBack('geometric-raytracing')} /></div>
+  }
 
   /* ─── Geometric Optics hub ─── */
   if (currentView === 'geometric-hub') {
@@ -219,12 +226,11 @@ export default function Home() {
         title="几何光学" fadeIn={fadeIn} fadeOut={fadeOut}
         onBack={goHome} footerText="v1.0 · 几何光学模块"
         modules={[
-          { id: 'geometric-raytracing', title: '光线追迹与透镜成像', description: '交互式薄透镜成像：拖拽调节物距、焦距，实时渲染光路，追踪像距、放大率与虚实像判据', iconText: '▽' },
+          { id: 'geometric-raytracing', title: '光线追迹与透镜成像', description: '薄透镜成像·透镜组合·球面镜·棱镜分光，三条主光线追迹，实时成像判定', iconText: '▽' },
         ]}
         pressedCard={pressedCard} hoveredCard={hoveredCard}
         setHoveredCard={setHoveredCard} setPressedCard={setPressedCard}
         onNavigate={navigateTo}
-        comingSoon={['geometric-raytracing']}
       />
     )
   }
