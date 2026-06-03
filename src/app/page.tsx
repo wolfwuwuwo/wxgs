@@ -178,24 +178,38 @@ export default function Home() {
     }, 200)
   }, [])
 
+  // Navigate back to parent hub instead of home
+  const goBack = useCallback((viewId: ViewId) => {
+    const parentMap: Partial<Record<ViewId, ViewId>> = {
+      'physical-jones': 'physical-hub',
+      'physical-diffraction': 'physical-hub',
+      'physical-polarimeter': 'physical-hub',
+      'physical-lcvalve': 'physical-hub',
+      'physical-scanner': 'physical-hub',
+      'modern-gaussian': 'modern-hub',
+      'geometric-raytracing': 'geometric-hub',
+    }
+    navigateTo(parentMap[viewId] || 'home')
+  }, [navigateTo])
+
   /* ─── Sub-module views ─── */
   if (currentView === 'physical-jones') {
-    return <div className={`min-h-screen flex flex-col ${fadeIn ? 'page-fade-in' : ''}`} style={{ background: '#FFFFFF' }}><JonesPolarizationLab onBack={goHome} /></div>
+    return <div className={`min-h-screen flex flex-col ${fadeIn ? 'page-fade-in' : ''}`} style={{ background: '#FFFFFF' }}><JonesPolarizationLab onBack={() => goBack('physical-jones')} /></div>
   }
   if (currentView === 'physical-diffraction') {
-    return <div className={`min-h-screen flex flex-col ${fadeIn ? 'page-fade-in' : ''}`} style={{ background: '#FFFFFF' }}><VectorDiffractionWorkshop onBack={goHome} /></div>
+    return <div className={`min-h-screen flex flex-col ${fadeIn ? 'page-fade-in' : ''}`} style={{ background: '#FFFFFF' }}><VectorDiffractionWorkshop onBack={() => goBack('physical-diffraction')} /></div>
   }
   if (currentView === 'physical-polarimeter') {
-    return <div className={`min-h-screen flex flex-col ${fadeIn ? 'page-fade-in' : ''}`} style={{ background: '#FFFFFF' }}><PolarimeterExperiment onBack={goHome} /></div>
+    return <div className={`min-h-screen flex flex-col ${fadeIn ? 'page-fade-in' : ''}`} style={{ background: '#FFFFFF' }}><PolarimeterExperiment onBack={() => goBack('physical-polarimeter')} /></div>
   }
   if (currentView === 'physical-lcvalve') {
-    return <div className={`min-h-screen flex flex-col ${fadeIn ? 'page-fade-in' : ''}`} style={{ background: '#FFFFFF' }}><LiquidCrystalValve onBack={goHome} /></div>
+    return <div className={`min-h-screen flex flex-col ${fadeIn ? 'page-fade-in' : ''}`} style={{ background: '#FFFFFF' }}><LiquidCrystalValve onBack={() => goBack('physical-lcvalve')} /></div>
   }
   if (currentView === 'physical-scanner') {
-    return <div className={`min-h-screen flex flex-col ${fadeIn ? 'page-fade-in' : ''}`} style={{ background: '#FFFFFF' }}><PolarizationScanner onBack={goHome} /></div>
+    return <div className={`min-h-screen flex flex-col ${fadeIn ? 'page-fade-in' : ''}`} style={{ background: '#FFFFFF' }}><PolarizationScanner onBack={() => goBack('physical-scanner')} /></div>
   }
   if (currentView === 'modern-gaussian') {
-    return <div className={`min-h-screen flex flex-col ${fadeIn ? 'page-fade-in' : ''}`} style={{ background: '#FFFFFF' }}><GaussianBeamTracer onBack={goHome} /></div>
+    return <div className={`min-h-screen flex flex-col ${fadeIn ? 'page-fade-in' : ''}`} style={{ background: '#FFFFFF' }}><GaussianBeamTracer onBack={() => goBack('modern-gaussian')} /></div>
   }
 
   /* ─── Geometric Optics hub ─── */
