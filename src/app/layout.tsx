@@ -13,7 +13,7 @@ export const metadata: Metadata = {
   title: "光学仿真实验平台",
   description: "面向大学基础物理光学课堂的交互式仿真平台——高斯光束追踪 | 矢量衍射仿真 | 偏振琼斯分析",
   icons: {
-    icon: "/logo.svg",
+    icon: "/logo.png",
   },
 };
 
