@@ -45,9 +45,10 @@ import {
 
 const FONT = 'var(--font-ibm-plex-sans), system-ui, sans-serif'
 const GRID_SIZE = 256
+const PROPAGATION_GRID_SIZE = 64
 const SURFACE_SIZE = 80
 
-type ExperimentMode = 'basic' | 'babinet' | 'grating_spectrometer' | 'rayleigh' | 'hologram'
+type ExperimentMode = 'basic' | 'babinet' | 'grating_spectrometer' | 'rayleigh' | 'hologram' | 'propagation'
 type ColorMode = 'wavelength' | 'grayscale' | 'inverted' | 'blue-white'
 type ApertureMode = 'circular' | 'rectangular' | 'single_slit' | 'double_slit' | 'grating' | 'annular' | 'triangle' | 'polygon'
 
@@ -68,6 +69,7 @@ const MODE_LABELS: Record<ExperimentMode, string> = {
   grating_spectrometer: '光栅光谱仪',
   rayleigh: '衍射极限',
   hologram: '全息再现',
+  propagation: '传播演化',
 }
 
 const MODE_DESCRIPTIONS: Record<ExperimentMode, string> = {
@@ -76,6 +78,7 @@ const MODE_DESCRIPTIONS: Record<ExperimentMode, string> = {
   grating_spectrometer: '多缝光栅，改变缝数/间距/波长，角色散与分辨率',
   rayleigh: '两点源成像，调节间距至瑞利判据',
   hologram: '计算全息图光学再现，观察重建像',
+  propagation: '观察衍射图样随传播距离的演化过程',
 }
 
 // Wavelength presets (nm)
@@ -897,6 +900,154 @@ function HologramPanel({
 }
 
 /* ═══════════════════════════════════════════════
+   Propagation Evolution Panel
+   ═══════════════════════════════════════════════ */
+
+function PropagationEvolutionPanel({
+  results,
+  distances,
+  wavelengthNm,
+  apertureRadiusNorm,
+  fieldSizeM,
+  wavelengthM,
+}: {
+  results: Float64Array[]
+  distances: number[] // in mm
+  wavelengthNm: number
+  apertureRadiusNorm: number
+  fieldSizeM: number
+  wavelengthM: number
+}) {
+  const canvasRefs = useRef<(HTMLCanvasElement | null)[]>([])
+
+  const regionInfo = useMemo(() => {
+    return distances.map(distMm => {
+      const distM = distMm * 1e-3
+      const apertureRadiusM = apertureRadiusNorm * fieldSizeM
+      const NF = computeFresnelNumber(apertureRadiusM, wavelengthM, distM)
+      const region = classifyRegion(NF)
+      const regionLabel = region === 'fraunhofer' ? '夫琅禾费' : region === 'fresnel' ? '菲涅耳' : '近场'
+      const regionColor = region === 'fraunhofer' ? '#2D7D46' : region === 'fresnel' ? '#B8860B' : '#CC0000'
+      return { NF, region, regionLabel, regionColor }
+    })
+  }, [distances, apertureRadiusNorm, fieldSizeM, wavelengthM])
+
+  // Draw each canvas
+  useEffect(() => {
+    results.forEach((intensity, idx) => {
+      const canvas = canvasRefs.current[idx]
+      if (!canvas) return
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return
+
+      const dpr = window.devicePixelRatio || 1
+      const size = 140
+      canvas.width = size * dpr; canvas.height = size * dpr
+      canvas.style.width = `${size}px`; canvas.style.height = `${size}px`
+      ctx.scale(dpr, dpr)
+
+      const imageData = intensityToWavelengthColor(intensity, PROPAGATION_GRID_SIZE, wavelengthNm)
+      const tempCanvas = document.createElement('canvas')
+      tempCanvas.width = PROPAGATION_GRID_SIZE; tempCanvas.height = PROPAGATION_GRID_SIZE
+      const tempCtx = tempCanvas.getContext('2d')!
+      tempCtx.putImageData(imageData, 0, 0)
+      ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high'
+      ctx.drawImage(tempCanvas, 0, 0, size, size)
+      ctx.strokeStyle = '#d4d8e0'; ctx.lineWidth = 1
+      ctx.strokeRect(0, 0, size, size)
+    })
+  }, [results, wavelengthNm])
+
+  const formatDist = (mm: number) => {
+    if (mm >= 1000) return `z = ${(mm / 1000).toFixed(1)} m`
+    if (mm >= 1) return `z = ${mm.toFixed(0)} mm`
+    return `z = ${(mm * 1000).toFixed(0)} μm`
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+      {/* Title */}
+      <div style={{
+        fontSize: '11px', fontWeight: 600, color: '#1A1A1A',
+        fontFamily: FONT, marginBottom: '4px',
+      }}>
+        衍射图样随传播距离演化
+      </div>
+
+      {/* Canvases row with arrows */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0' }}>
+        {results.map((_, idx) => (
+          <div key={idx} style={{ display: 'flex', alignItems: 'center' }}>
+            <div style={{ textAlign: 'center' }}>
+              <canvas
+                ref={el => { canvasRefs.current[idx] = el }}
+                style={{ display: 'block' }}
+              />
+              <div style={{
+                fontSize: '9px', fontWeight: 600, color: '#1A1A1A',
+                fontFamily: FONT, marginTop: '4px',
+                fontVariantNumeric: 'tabular-nums',
+              }}>
+                {formatDist(distances[idx])}
+              </div>
+              <div style={{
+                fontSize: '8px', fontFamily: FONT, marginTop: '2px',
+                display: 'flex', justifyContent: 'center', gap: '4px', alignItems: 'center',
+              }}>
+                <span style={{ color: '#555555' }}>N<sub>F</sub>=</span>
+                <span className="tabular-nums" style={{ color: '#1A1A1A', fontWeight: 600 }}>
+                  {regionInfo[idx].NF > 999 ? regionInfo[idx].NF.toExponential(1) : regionInfo[idx].NF.toFixed(1)}
+                </span>
+              </div>
+              <div style={{
+                padding: '1px 5px', borderRadius: '2px',
+                border: `1px solid ${regionInfo[idx].regionColor}`,
+                color: regionInfo[idx].regionColor, fontSize: '8px', fontWeight: 600,
+                fontFamily: FONT, display: 'inline-block', marginTop: '2px',
+              }}>
+                {regionInfo[idx].regionLabel}
+              </div>
+            </div>
+            {idx < results.length - 1 && (
+              <div style={{
+                fontSize: '14px', color: '#9ca3af', fontFamily: FONT,
+                margin: '0 2px', userSelect: 'none', alignSelf: 'center',
+                marginTop: '-24px',
+              }}>
+                →
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Info panel */}
+      <div style={{
+        backgroundColor: '#FFFFFF', border: '1px solid #D0D0D0',
+        borderRadius: '2px', padding: '8px', fontSize: '9px',
+        fontFamily: FONT, lineHeight: '1.8', maxWidth: '600px', width: '100%',
+        marginTop: '4px',
+      }}>
+        <div style={{ fontWeight: 600, color: '#1A1A1A', marginBottom: '4px' }}>传播演化说明</div>
+        <div style={{ color: '#555555' }}>距离范围: <span className="tabular-nums" style={{ fontWeight: 600 }}>
+          {formatDist(distances[0])} ~ {formatDist(distances[distances.length - 1])}
+        </span></div>
+        <div style={{ color: '#555555' }}>菲涅耳数范围: <span className="tabular-nums" style={{ fontWeight: 600 }}>
+          {regionInfo[regionInfo.length - 1].NF > 999 ? regionInfo[regionInfo.length - 1].NF.toExponential(1) : regionInfo[regionInfo.length - 1].NF.toFixed(1)}
+          {' ~ '}
+          {regionInfo[0].NF > 999 ? regionInfo[0].NF.toExponential(1) : regionInfo[0].NF.toFixed(1)}
+        </span></div>
+        <div style={{ color: '#888888', fontSize: '8px', marginTop: '4px', lineHeight: '1.5' }}>
+          近场 (N<sub>F</sub> &gt; 5): 复杂图样，口径投影清晰可见<br/>
+          菲涅耳区 (0.5 &lt; N<sub>F</sub> &lt; 5): 过渡区域，出现衍射条纹<br/>
+          夫琅禾费区 (N<sub>F</sub> &lt; 0.5): 远场，干净傅里叶变换图样
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ═══════════════════════════════════════════════
    MAIN COMPONENT
    ═══════════════════════════════════════════════ */
 
@@ -931,6 +1082,9 @@ export default function VectorDiffractionWorkshop({ onBack }: { onBack: () => vo
   /* ── Hologram mode state ────────────────────────────────── */
   const [holoPattern, setHoloPattern] = useState<'F' | 'cross' | 'circle'>('F')
   const [referenceAngle, setReferenceAngle] = useState(5)
+
+  /* ── Propagation mode state ─────────────────────────────── */
+  const [propagationDistances, setPropagationDistances] = useState<number[]>([50, 200, 500, 2000, 10000])
 
   /* ── Canvas refs ────────────────────────────────────────── */
   const apertureCanvasRef = useRef<HTMLCanvasElement>(null)
@@ -1049,6 +1203,41 @@ export default function VectorDiffractionWorkshop({ onBack }: { onBack: () => vo
     const result = computeFraunhoferDiffraction(holoAperture, GRID_SIZE)
     return result.intensity
   }, [expMode, holoAperture])
+
+  /* ── Propagation mode: small aperture & multi-distance computation ── */
+  const propagationAperture = useMemo(() => {
+    if (expMode !== 'propagation') return null
+    // Generate a 64×64 version of the aperture for faster computation
+    const smallParams: ApertureParams = {
+      ...apertureParams,
+      gridSize: PROPAGATION_GRID_SIZE,
+    }
+    return generateAperture(smallParams)
+  }, [expMode, apertureParams])
+
+  const propagationResults = useMemo(() => {
+    if (expMode !== 'propagation' || !propagationAperture) return null
+    const smallFieldSizeM = fieldSizeM // same physical size, smaller grid
+    return propagationDistances.map(distMm => {
+      const distM = distMm * 1e-3
+      const result = computeAngularSpectrum(
+        propagationAperture, PROPAGATION_GRID_SIZE,
+        wavelengthM, distM, smallFieldSizeM
+      )
+      // Normalize independently
+      let maxVal = 0
+      for (let i = 0; i < result.intensity.length; i++) {
+        if (result.intensity[i] > maxVal) maxVal = result.intensity[i]
+      }
+      const normalized = new Float64Array(result.intensity.length)
+      if (maxVal > 0) {
+        for (let i = 0; i < result.intensity.length; i++) {
+          normalized[i] = result.intensity[i] / maxVal
+        }
+      }
+      return normalized
+    })
+  }, [expMode, propagationAperture, propagationDistances, wavelengthM, fieldSizeM])
 
   /* ── Fresnel number & region ────────────────────────────── */
   const fresnelNumber = vectorResult.fresnelNumber
@@ -1357,6 +1546,18 @@ export default function VectorDiffractionWorkshop({ onBack }: { onBack: () => vo
               pattern={holoPattern}
             />
           )}
+
+          {/* ─── Propagation Mode ─── */}
+          {expMode === 'propagation' && propagationResults && (
+            <PropagationEvolutionPanel
+              results={propagationResults}
+              distances={propagationDistances}
+              wavelengthNm={wavelengthNm}
+              apertureRadiusNorm={apertureRadiusNorm}
+              fieldSizeM={fieldSizeM}
+              wavelengthM={wavelengthM}
+            />
+          )}
         </div>
 
         {/* Right: Control Panel */}
@@ -1424,8 +1625,8 @@ export default function VectorDiffractionWorkshop({ onBack }: { onBack: () => vo
             </span>
           </div>
 
-          {/* Aperture type (only for basic/babinet modes) */}
-          {(expMode === 'basic' || expMode === 'babinet') && (
+          {/* Aperture type (only for basic/babinet/propagation modes) */}
+          {(expMode === 'basic' || expMode === 'babinet' || expMode === 'propagation') && (
             <>
               <SectionTitle>口径类型</SectionTitle>
               <Select value={apertureMode} onValueChange={v => setApertureMode(v as ApertureMode)}>
@@ -1585,6 +1786,48 @@ export default function VectorDiffractionWorkshop({ onBack }: { onBack: () => vo
             </>
           )}
 
+          {/* Propagation mode controls */}
+          {expMode === 'propagation' && (
+            <>
+              <SectionTitle>距离范围</SectionTitle>
+              {propagationDistances.map((dist, idx) => {
+                // Log scale slider: map slider [0,1] to [1mm, 20000mm] exponentially
+                const logMin = Math.log(1)
+                const logMax = Math.log(20000)
+                const sliderVal = (Math.log(dist) - logMin) / (logMax - logMin)
+                const formatLabel = (mm: number) => {
+                  if (mm >= 1000) return `${(mm / 1000).toFixed(1)}m`
+                  if (mm >= 1) return `${mm.toFixed(0)}mm`
+                  return `${(mm * 1000).toFixed(0)}μm`
+                }
+                return (
+                  <div key={idx} style={{ marginBottom: '6px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Label style={{ fontSize: '10px', color: '#555555' }}>z{idx + 1}</Label>
+                      <span className="tabular-nums" style={{ fontSize: '10px', fontWeight: 600, color: '#1A1A1A', fontFamily: FONT }}>
+                        {formatLabel(dist)}
+                      </span>
+                    </div>
+                    <input type="range" min={0} max={1} step={0.001} value={sliderVal}
+                      onChange={e => {
+                        const newLog = logMin + Number(e.target.value) * (logMax - logMin)
+                        const newDist = Math.exp(newLog)
+                        const newDistances = [...propagationDistances]
+                        newDistances[idx] = Math.round(newDist)
+                        setPropagationDistances(newDistances)
+                      }}
+                      style={{ flex: 1, accentColor: '#333333', width: '100%' }}
+                    />
+                  </div>
+                )
+              })}
+              <div style={{ fontSize: '8px', color: '#888888', fontFamily: FONT, marginTop: '2px', lineHeight: '1.5' }}>
+                对数刻度：1mm ~ 20m<br/>
+                拖动滑块调节各观察面距离
+              </div>
+            </>
+          )}
+
           {/* Display Options */}
           <SectionTitle>显示选项</SectionTitle>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -1676,7 +1919,7 @@ export default function VectorDiffractionWorkshop({ onBack }: { onBack: () => vo
         borderTop: '1px solid #CCCCCC', paddingLeft: '24px',
       }}>
         <span className="tabular-nums" style={{ fontFamily: FONT, fontSize: '10px', color: '#888888' }}>
-          v2.0 · 角谱衍射理论 + 矢量衍射 + 巴比涅/光栅/瑞利/全息
+          v2.0 · 角谱衍射理论 + 矢量衍射 + 巴比涅/光栅/瑞利/全息/传播演化
         </span>
       </div>
     </div>

@@ -504,6 +504,33 @@ function AnalyzerDialCanvas({
     ctx.arc(cx, cy, 3, 0, Math.PI * 2);
     ctx.fill();
 
+    // Vernier scale (0.1° resolution) - inner ring with 10 divisions spanning 9°
+    const vernierBase = Math.floor(angle / 10) * 10; // base degree mark
+    const vernierFrac = (angle % 10); // fractional part
+    ctx.strokeStyle = "#cc0000";
+    ctx.lineWidth = 0.8;
+    const vernierSpan = 9; // 10 divisions of vernier span 9° on main scale
+    for (let i = 0; i <= 10; i++) {
+      const vDeg = vernierBase + (i / 10) * vernierSpan;
+      const vRad = ((vDeg - 90) * Math.PI) / 180;
+      const vOuter = outerR - 22;
+      const vInner = vOuter - (i % 5 === 0 ? 8 : 4);
+      ctx.beginPath();
+      ctx.moveTo(cx + vOuter * Math.cos(vRad), cy + vOuter * Math.sin(vRad));
+      ctx.lineTo(cx + vInner * Math.cos(vRad), cy + vInner * Math.sin(vRad));
+      ctx.stroke();
+    }
+    // Vernier reading indicator (arrow pointing to aligned mark)
+    const alignedMark = Math.round(vernierFrac * 10) / 10;
+    const alignedDeg = vernierBase + alignedMark * vernierSpan / 10;
+    const alignedRad = ((alignedDeg - 90) * Math.PI) / 180;
+    ctx.fillStyle = "#cc0000";
+    ctx.beginPath();
+    ctx.moveTo(cx + (outerR - 22) * Math.cos(alignedRad), cy + (outerR - 22) * Math.sin(alignedRad));
+    ctx.lineTo(cx + (outerR - 36) * Math.cos(alignedRad - 0.05), cy + (outerR - 36) * Math.sin(alignedRad - 0.05));
+    ctx.lineTo(cx + (outerR - 36) * Math.cos(alignedRad + 0.05), cy + (outerR - 36) * Math.sin(alignedRad + 0.05));
+    ctx.fill();
+
     // Angle display
     ctx.fillStyle = "#1a1a2e";
     ctx.font = "12px monospace";

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import dynamic from 'next/dynamic'
 import { toast } from 'sonner'
 
@@ -32,6 +32,14 @@ const RayTracingLab = dynamic(
   () => import('@/components/simulations/RayTracingLab'),
   { ssr: false }
 )
+const FiberModeSimulator = dynamic(
+  () => import('@/components/simulations/FiberModeSimulator'),
+  { ssr: false }
+)
+const PrismSpectrometer = dynamic(
+  () => import('@/components/simulations/PrismSpectrometer'),
+  { ssr: false }
+)
 
 type ViewId =
   | 'home'
@@ -43,8 +51,10 @@ type ViewId =
   | 'physical-scanner'
   | 'geometric-hub'
   | 'geometric-raytracing'
+  | 'geometric-prism'
   | 'modern-hub'
   | 'modern-gaussian'
+  | 'modern-fiber'
 
 /* ─── SVG Icons ─── */
 function GeometricOpticsIcon() {
@@ -145,11 +155,11 @@ const cards = [
 ]
 
 const physicalSubModules: { id: ViewId; title: string; description: string; iconText: string }[] = [
-  { id: 'physical-jones', title: '偏振琼斯矩阵实验室', description: '自由组合偏振片、半波片、1/4波片，旋转角度，动态绘制偏振椭圆，追踪琼斯矩阵与斯托克斯参数', iconText: 'J' },
-  { id: 'physical-diffraction', title: '全波前矢量衍射工坊', description: '角谱衍射理论+矢量衍射(Ex/Ey/Ez)，手绘口径+高斯切趾，巴比涅/光栅/瑞利/全息五大实验模式', iconText: 'D' },
-  { id: 'physical-polarimeter', title: '旋光仪实验', description: '虚拟经典旋光仪，零位法测旋光度，钠灯光源→起偏器→样品管→检偏器→探测器，预设葡萄糖、蔗糖等', iconText: 'α' },
-  { id: 'physical-scanner', title: '偏振视觉扫描仪', description: '调用摄像头，实时提取应力双折射，伪彩色应力光学标准配色，如偏光显微镜视场', iconText: '◎' },
-  { id: 'physical-lcvalve', title: '液晶旋光光阀实验台', description: 'Oseen-Frank弹性理论+Berreman 4×4矩阵法，TN/IPS/VA模式对比，响应时间测量，视角特性，灰度寻址', iconText: 'LC' },
+  { id: 'physical-jones', title: '偏振琼斯矩阵实验室', description: '5种模式(基础/BS补偿器/偏振态测量/消偏振/偏光显微镜)，3D偏振椭圆+庞加莱球+电场螺旋，手性着色', iconText: 'J' },
+  { id: 'physical-diffraction', title: '全波前矢量衍射工坊', description: '角谱衍射ASM+矢量衍射(Ex/Ey/Ez)，手绘口径+高斯切趾，巴比涅/光栅/瑞利/全息五大实验模式', iconText: 'D' },
+  { id: 'physical-polarimeter', title: '旋光仪实验', description: 'Drude旋光色散+变旋现象+半荫法+浓度测定，6种实验模式，3D虚拟仪器', iconText: 'α' },
+  { id: 'physical-scanner', title: '偏振视觉扫描仪', description: 'Sénarmont补偿+RGB色散+3D应力图+定量应力测量+教学演示库，4种实验模式', iconText: '◎' },
+  { id: 'physical-lcvalve', title: '液晶旋光光阀实验台', description: 'Oseen-Frank+Berreman 4×4，TN/IPS/VA模式对比，3D指向矢，5种实验模式', iconText: 'LC' },
 ]
 
 const FONT = 'var(--font-ibm-plex-sans), system-ui, sans-serif'
@@ -191,10 +201,38 @@ export default function Home() {
       'physical-lcvalve': 'physical-hub',
       'physical-scanner': 'physical-hub',
       'modern-gaussian': 'modern-hub',
+      'modern-fiber': 'modern-hub',
       'geometric-raytracing': 'geometric-hub',
+      'geometric-prism': 'geometric-hub',
     }
     navigateTo(parentMap[viewId] || 'home')
   }, [navigateTo])
+
+  // Keyboard shortcut: Escape to go back
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && currentView !== 'home') {
+        const parentMap: Partial<Record<ViewId, ViewId>> = {
+          'physical-hub': 'home',
+          'modern-hub': 'home',
+          'geometric-hub': 'home',
+          'physical-jones': 'physical-hub',
+          'physical-diffraction': 'physical-hub',
+          'physical-polarimeter': 'physical-hub',
+          'physical-lcvalve': 'physical-hub',
+          'physical-scanner': 'physical-hub',
+          'modern-gaussian': 'modern-hub',
+          'modern-fiber': 'modern-hub',
+          'geometric-raytracing': 'geometric-hub',
+          'geometric-prism': 'geometric-hub',
+        }
+        const target = parentMap[currentView] || 'home'
+        navigateTo(target)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [currentView, navigateTo])
 
   /* ─── Sub-module views ─── */
   if (currentView === 'physical-jones') {
@@ -218,15 +256,22 @@ export default function Home() {
   if (currentView === 'geometric-raytracing') {
     return <div className={`min-h-screen flex flex-col ${fadeIn ? 'page-fade-in' : ''}`} style={{ background: '#FFFFFF' }}><RayTracingLab onBack={() => goBack('geometric-raytracing')} /></div>
   }
+  if (currentView === 'geometric-prism') {
+    return <div className={`min-h-screen flex flex-col ${fadeIn ? 'page-fade-in' : ''}`} style={{ background: '#FFFFFF' }}><PrismSpectrometer onBack={() => goBack('geometric-prism')} /></div>
+  }
+  if (currentView === 'modern-fiber') {
+    return <div className={`min-h-screen flex flex-col ${fadeIn ? 'page-fade-in' : ''}`} style={{ background: '#FFFFFF' }}><FiberModeSimulator onBack={() => goBack('modern-fiber')} /></div>
+  }
 
   /* ─── Geometric Optics hub ─── */
   if (currentView === 'geometric-hub') {
     return (
       <ModuleHub
         title="几何光学" fadeIn={fadeIn} fadeOut={fadeOut}
-        onBack={goHome} footerText="v1.0 · 几何光学模块"
+        onBack={goHome} footerText="v2.1 · 几何光学模块 — 薄透镜·棱镜分光·色散曲线·光谱分析"
         modules={[
           { id: 'geometric-raytracing', title: '光线追迹与透镜成像', description: '薄透镜成像·透镜组合·球面镜·棱镜分光，三条主光线追迹，实时成像判定', iconText: '▽' },
+          { id: 'geometric-prism', title: '棱镜光谱仪', description: 'Cauchy色散+最小偏向角+光谱分析+棱镜组合(Amici/Pellin-Broca)，4种实验模式', iconText: '△' },
         ]}
         pressedCard={pressedCard} hoveredCard={hoveredCard}
         setHoveredCard={setHoveredCard} setPressedCard={setPressedCard}
@@ -240,9 +285,10 @@ export default function Home() {
     return (
       <ModuleHub
         title="现代光学" fadeIn={fadeIn} fadeOut={fadeOut}
-        onBack={goHome} footerText="v1.0 · 现代光学模块"
+        onBack={goHome} footerText="v2.1 · 现代光学模块 — 高斯光束q参量·光纤LP模式"
         modules={[
           { id: 'modern-gaussian', title: '高斯光束追踪器', description: '拖拽调节束腰半径、波长、传输距离、透镜焦距，实时渲染光束宽度沙漏形包络曲线与光斑演化', iconText: 'G' },
+          { id: 'modern-fiber', title: '阶跃光纤模式仿真器', description: 'LP模式求解+多模分析+色散特性+耦合效率+弯曲损耗，3D模式场可视化，5种实验模式', iconText: 'Φ' },
         ]}
         pressedCard={pressedCard} hoveredCard={hoveredCard}
         setHoveredCard={setHoveredCard} setPressedCard={setPressedCard}
@@ -256,7 +302,7 @@ export default function Home() {
     return (
       <ModuleHub
         title="物理光学" fadeIn={fadeIn} fadeOut={fadeOut}
-        onBack={goHome} footerText="v1.0 · 物理光学模块"
+        onBack={goHome} footerText="v2.1 · 物理光学模块 — 5个实验×3D可视化"
         modules={physicalSubModules}
         pressedCard={pressedCard} hoveredCard={hoveredCard}
         setHoveredCard={setHoveredCard} setPressedCard={setPressedCard}
@@ -316,7 +362,7 @@ export default function Home() {
       </main>
 
       <footer className="flex-shrink-0 flex items-center mt-auto" style={{ height: '24px', backgroundColor: '#FFFFFF', borderTop: '1px solid #CCCCCC', paddingLeft: '24px' }}>
-        <span style={{ fontFamily: FONT, fontSize: '10px', fontWeight: 400, color: '#888888' }} className="tabular-nums">v1.0 · 高斯光束追踪 | 矢量衍射仿真 | 偏振琼斯分析</span>
+        <span style={{ fontFamily: FONT, fontSize: '10px', fontWeight: 400, color: '#888888' }} className="tabular-nums">v2.1 · 琼斯矩阵分析 | 矢量衍射ASM | 旋光色散Drude | 偏振应力3D | 液晶Berreman 4×4 | 高斯光束q参量 | 光线追迹 | 光纤LP模式 | 棱镜色散</span>
       </footer>
     </div>
   )

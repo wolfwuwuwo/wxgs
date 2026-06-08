@@ -546,7 +546,7 @@ export default function RayTracingLab({ onBack }: { onBack: () => void }) {
                 {!imageResult.atInfinity && imgX > 10 && imgX < SVG_W - 10 && (
                   <text x={(LENS_X + imgX) / 2} y={AXIS_Y + 35} textAnchor="middle" fontSize="8"
                     fill="#888888" fontFamily={FONT} className="tabular-nums">
-                    v = {imageResult.v.toFixed(1)}mm
+                    v = {imageResult.atInfinity ? '∞' : `${imageResult.v.toFixed(1)}mm`}
                   </text>
                 )}
               </g>
@@ -799,7 +799,7 @@ export default function RayTracingLab({ onBack }: { onBack: () => void }) {
             {expMode === 'thinLens' && (
               <>
                 <div>薄透镜公式: <span className="tabular-nums" style={{ fontWeight: 600, color: '#1A1A1A' }}>1/v - 1/u = 1/f</span></div>
-                <div>1/{imageResult.v.toFixed(1)} - 1/(-{objDist}) = 1/{focalLength}</div>
+                <div>1/{imageResult.atInfinity ? '∞' : imageResult.v.toFixed(1)} - 1/(-{objDist}) = 1/{focalLength}</div>
                 <div>放大率: m = v/u = {imageResult.atInfinity ? '∞' : imageResult.magnification.toFixed(3)}</div>
               </>
             )}

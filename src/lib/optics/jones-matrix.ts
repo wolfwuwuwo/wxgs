@@ -1,12 +1,22 @@
 // Jones Matrix Calculus Library for Optics Simulation
 // Implements Jones matrix formalism for polarization optics
+// Extended with crystal, Babinet-Soleil compensator, depolarizer, and Mueller-Stokes utilities
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
 /** Element types supported by the Jones matrix engine */
-export type ElementType = 'polarizer' | 'halfwave' | 'quarterwave' | 'waveplate' | 'rotator' | 'faraday';
+export type ElementType =
+  | 'polarizer'
+  | 'halfwave'
+  | 'quarterwave'
+  | 'waveplate'
+  | 'rotator'
+  | 'faraday'
+  | 'crystal'
+  | 'babinet_soleil'
+  | 'depolarizer';
 
 /** A complex number represented as [real, imaginary] */
 export type JonesVector = [number, number];
@@ -19,8 +29,15 @@ export interface OpticalElement {
   id: string;
   type: ElementType;
   angle: number;           // degrees
-  retardation?: number;    // degrees (for waveplate)
+  retardation?: number;    // degrees (for waveplate, babinet_soleil)
   label?: string;
+  // Crystal parameters
+  thickness?: number;      // mm (for crystal)
+  no?: number;             // ordinary refractive index (for crystal)
+  ne?: number;             // extraordinary refractive index (for crystal)
+  wavelength?: number;     // nm (for crystal)
+  // Depolarizer parameters
+  depolFactor?: number;    // 0-1 (for depolarizer)
 }
 
 /** A single propagation step with full polarisation analysis */
@@ -50,12 +67,15 @@ export interface ElementInfo {
 // ---------------------------------------------------------------------------
 
 export const ELEMENT_INFO: Record<ElementType, ElementInfo> = {
-  polarizer:  { symbol: 'P',   name: '偏振片' },
-  halfwave:   { symbol: 'λ/2', name: '半波片' },
-  quarterwave:{ symbol: 'λ/4', name: '1/4波片' },
-  waveplate:  { symbol: 'WP',  name: '波片' },
-  rotator:    { symbol: 'R',   name: '旋光器' },
-  faraday:    { symbol: 'F',   name: '法拉第旋转器' },
+  polarizer:      { symbol: 'P',   name: '偏振片' },
+  halfwave:       { symbol: 'λ/2', name: '半波片' },
+  quarterwave:    { symbol: 'λ/4', name: '1/4波片' },
+  waveplate:      { symbol: 'WP',  name: '波片' },
+  rotator:        { symbol: 'R',   name: '旋光器' },
+  faraday:        { symbol: 'F',   name: '法拉第旋转器' },
+  crystal:        { symbol: 'XC',  name: '单轴晶体' },
+  babinet_soleil: { symbol: 'BS',  name: 'Babinet-Soleil补偿器' },
+  depolarizer:    { symbol: 'D',   name: '退偏器' },
 };
 
 // ---------------------------------------------------------------------------
@@ -80,13 +100,13 @@ export const LPn45: [JonesVector, JonesVector] = [
   [-1 / Math.sqrt(2), 0],
 ];
 
-/** Right circular polarisation (Ex = 1/√2, Ey = -i/√2 ⇒ S3 > 0) */
+/** Right circular polarisation (Ex = 1/√2, Ey = -i/√2 ⇒ S3 < 0 in our convention) */
 export const RCP: [JonesVector, JonesVector] = [
   [1 / Math.sqrt(2), 0],
   [0, -1 / Math.sqrt(2)],
 ];
 
-/** Left circular polarisation (Ex = 1/√2, Ey = +i/√2 ⇒ S3 < 0) */
+/** Left circular polarisation (Ex = 1/√2, Ey = +i/√2 ⇒ S3 > 0 in our convention) */
 export const LCP: [JonesVector, JonesVector] = [
   [1 / Math.sqrt(2), 0],
   [0, 1 / Math.sqrt(2)],
@@ -254,6 +274,209 @@ export function faradayRotator(angleDeg: number): JonesMatrix {
 }
 
 // ---------------------------------------------------------------------------
+// NEW: Crystal (uniaxial birefringent crystal)
+// ---------------------------------------------------------------------------
+
+/**
+ * Calculate the retardation (in degrees) produced by a uniaxial crystal.
+ * δ = 2π · Δn · d / λ, where Δn = ne − no
+ *
+ * @param thicknessMm  Thickness in millimetres
+ * @param no           Ordinary refractive index
+ * @param ne           Extraordinary refractive index
+ * @param wavelengthNm Wavelength in nanometres
+ * @returns Retardation in degrees
+ */
+export function crystalRetardation(
+  thicknessMm: number,
+  no: number,
+  ne: number,
+  wavelengthNm: number,
+): number {
+  const deltaN = ne - no;
+  const thicknessNm = thicknessMm * 1e6; // mm → nm
+  const retardationRad = (2 * Math.PI * deltaN * thicknessNm) / wavelengthNm;
+  const retardationDeg = (retardationRad * 180) / Math.PI;
+  // Normalise to [0, 360)
+  return ((retardationDeg % 360) + 360) % 360;
+}
+
+/**
+ * Calculate the walk-off angle for a uniaxial crystal at oblique incidence.
+ * tan(ρ) ≈ (ne² − no²) · sin(2θ_inc) / (2 · (no² · sin²θ + ne² · cos²θ))
+ *
+ * @param no                Ordinary refractive index
+ * @param ne                Extraordinary refractive index
+ * @param incidenceAngleDeg Angle of incidence in degrees
+ * @returns Walk-off angle in degrees
+ */
+export function walkOffAngle(
+  no: number,
+  ne: number,
+  incidenceAngleDeg: number,
+): number {
+  const thetaInc = (incidenceAngleDeg * Math.PI) / 180;
+  const numerator = (ne * ne - no * no) * Math.sin(2 * thetaInc);
+  const denominator =
+    2 * (no * no * Math.sin(thetaInc) * Math.sin(thetaInc) +
+         ne * ne * Math.cos(thetaInc) * Math.cos(thetaInc));
+  if (Math.abs(denominator) < 1e-15) return 0;
+  const rho = Math.atan(numerator / denominator);
+  return (rho * 180) / Math.PI;
+}
+
+/**
+ * Uniaxial birefringent crystal Jones matrix.
+ * Computes retardation from crystal parameters, then applies a wave plate matrix.
+ *
+ * @param angleDeg     Fast axis orientation in degrees
+ * @param thicknessMm  Crystal thickness in millimetres
+ * @param no           Ordinary refractive index
+ * @param ne           Extraordinary refractive index
+ * @param wavelengthNm Wavelength in nanometres
+ */
+export function uniaxialCrystal(
+  angleDeg: number,
+  thicknessMm: number,
+  no: number,
+  ne: number,
+  wavelengthNm: number,
+): JonesMatrix {
+  const retDeg = crystalRetardation(thicknessMm, no, ne, wavelengthNm);
+  return wavePlate(angleDeg, retDeg);
+}
+
+// ---------------------------------------------------------------------------
+// NEW: Babinet-Soleil compensator
+// ---------------------------------------------------------------------------
+
+/**
+ * Babinet-Soleil compensator Jones matrix.
+ * Provides continuously variable retardation (0–360°) at a given fast-axis angle.
+ * Internally identical to a wave plate, but emphasises variable-delay measurement.
+ *
+ * @param angleDeg        Fast axis orientation in degrees
+ * @param retardationDeg  Retardation in degrees (0–360°, continuously variable)
+ */
+export function babinetSoleilCompensator(
+  angleDeg: number,
+  retardationDeg: number,
+): JonesMatrix {
+  // Clamp retardation to [0, 360)
+  const clampedRet = ((retardationDeg % 360) + 360) % 360;
+  return wavePlate(angleDeg, clampedRet);
+}
+
+// ---------------------------------------------------------------------------
+// NEW: Depolarizer (Mueller matrix approach)
+// ---------------------------------------------------------------------------
+
+/**
+ * Mueller matrix for a depolarising element.
+ * M = (1−d)·I₄ + d·diag(1,0,0,0)
+ *   = diag(1, 1−d, 1−d, 1−d)
+ *
+ * @param depolFactor Depolarisation factor: 0 = fully polarised, 1 = fully depolarised
+ * @returns 4×4 Mueller matrix (real-valued)
+ */
+export function depolarizerMueller(depolFactor: number): number[][] {
+  const d = Math.max(0, Math.min(1, depolFactor));
+  return [
+    [1, 0, 0, 0],
+    [0, 1 - d, 0, 0],
+    [0, 0, 1 - d, 0],
+    [0, 0, 0, 1 - d],
+  ];
+}
+
+/** Apply a 4×4 Mueller matrix to a Stokes vector */
+export function applyMuellerToStokes(
+  M: number[][],
+  s: [number, number, number, number],
+): [number, number, number, number] {
+  const result: number[] = [0, 0, 0, 0];
+  for (let i = 0; i < 4; i++) {
+    for (let j = 0; j < 4; j++) {
+      result[i] += M[i][j] * s[j];
+    }
+  }
+  return [result[0], result[1], result[2], result[3]];
+}
+
+// ---------------------------------------------------------------------------
+// NEW: Mueller-from-Jones conversion
+// ---------------------------------------------------------------------------
+
+/**
+ * Convert a 2×2 Jones matrix to a 4×4 Mueller matrix.
+ *
+ * Uses the Pauli matrix trace formula:
+ *   M[i][j] = ½ · Re(Tr(σᵢ · J · σⱼ · J†))
+ *
+ * where the Pauli basis is chosen to be consistent with our Stokes convention:
+ *   S₀ = |Ex|²+|Ey|², S₁ = |Ex|²−|Ey|², S₂ = 2·Re(Ex*·Ey), S₃ = 2·Im(Ex*·Ey)
+ *
+ * σ₀ = [[1,0],[0,1]],  σ₁ = [[1,0],[0,−1]],  σ₂ = [[0,1],[1,0]],  σ₃ = [[0,i],[−i,0]]
+ */
+export function muellerFromJones(M: JonesMatrix): number[][] {
+  // Pauli matrices as 2×2 complex matrices (each entry is [re, im])
+  const sigma: JonesMatrix[] = [
+    // σ₀ = I
+    [[[1, 0], [0, 0]], [[0, 0], [1, 0]]],
+    // σ₁
+    [[[1, 0], [0, 0]], [[0, 0], [-1, 0]]],
+    // σ₂
+    [[[0, 0], [1, 0]], [[1, 0], [0, 0]]],
+    // σ₃ = [[0, i], [-i, 0]]   (gives S₃ = Tr(σ₃·ρ) = 2·Im(Ex*·Ey))
+    [[[0, 0], [0, 1]], [[0, -1], [0, 0]]],
+  ];
+
+  // Compute J† (conjugate transpose)
+  const jDag: JonesMatrix = [
+    [cConj(M[0][0]), cConj(M[1][0])],
+    [cConj(M[0][1]), cConj(M[1][1])],
+  ];
+
+  const result: number[][] = Array.from({ length: 4 }, () => Array(4).fill(0));
+
+  for (let i = 0; i < 4; i++) {
+    for (let j = 0; j < 4; j++) {
+      // Compute σᵢ · J · σⱼ · J†
+      const step1 = matMul(sigma[i], M);        // σᵢ · J
+      const step2 = matMul(step1, sigma[j]);     // σᵢ · J · σⱼ
+      const step3 = matMul(step2, jDag);         // σᵢ · J · σⱼ · J†
+      // Trace = sum of diagonal elements (real part)
+      const trace = cAdd(step3[0][0], step3[1][1]);
+      result[i][j] = trace[0] / 2; // Take real part / 2
+    }
+  }
+
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// NEW: Stokes ↔ Poincaré sphere
+// ---------------------------------------------------------------------------
+
+/**
+ * Convert Stokes parameters to Poincaré sphere coordinates.
+ * For a fully polarised beam (DOP = 1), the point lies on the unit sphere.
+ * For partially polarised light, the point is inside the sphere at radius = DOP.
+ *
+ * x = S₁/S₀,  y = S₂/S₀,  z = S₃/S₀
+ */
+export function stokesToPoincare(
+  s: [number, number, number, number],
+): { x: number; y: number; z: number } {
+  const S0 = s[0] === 0 ? 1 : s[0]; // avoid division by zero
+  return {
+    x: s[1] / S0,
+    y: s[2] / S0,
+    z: s[3] / S0,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Get Jones matrix for an arbitrary element
 // ---------------------------------------------------------------------------
 
@@ -271,6 +494,20 @@ export function getElementMatrix(element: OpticalElement): JonesMatrix {
       return rotator(element.angle);
     case 'faraday':
       return faradayRotator(element.angle);
+    case 'crystal':
+      return uniaxialCrystal(
+        element.angle,
+        element.thickness ?? 1,
+        element.no ?? 1.544,
+        element.ne ?? 1.553,
+        element.wavelength ?? 632.8,
+      );
+    case 'babinet_soleil':
+      return babinetSoleilCompensator(element.angle, element.retardation ?? 0);
+    case 'depolarizer':
+      // Jones calculus cannot represent depolarisation; return identity.
+      // Use depolarizerMueller() and applyMuellerToStokes() for proper handling.
+      return diagMatrix([1, 0], [1, 0]);
     default: {
       // Exhaustiveness check — should never reach here
       const _exhaustive: never = element.type;
@@ -372,6 +609,10 @@ export function polarizationEllipsePoints(
 /**
  * Propagate a Jones vector through an entire chain of optical elements.
  * Returns the final Jones vector after all elements.
+ *
+ * Note: Depolarizer elements are handled via Mueller-Stokes calculus internally,
+ * but the output is converted back to an equivalent Jones vector for API consistency.
+ * The DOP field in step-by-step propagation will reflect partial depolarisation.
  */
 export function propagateThroughChain(
   input: JonesVec2,
@@ -388,6 +629,12 @@ export function propagateThroughChain(
 /**
  * Propagate a Jones vector through a chain, returning intermediate states
  * at each step (including the input state).
+ *
+ * For depolarizer elements, the Jones vector is not meaningful (Jones calculus
+ * cannot represent partial polarisation). Instead, the Stokes parameters are
+ * computed via the Mueller matrix, and the Jones vector is set to an
+ * equivalent fully-polarised state with reduced intensity. The `dop` field
+ * correctly reflects the degree of polarisation.
  */
 export function propagateThroughChainStepByStep(
   input: JonesVec2,
@@ -407,22 +654,72 @@ export function propagateThroughChainStepByStep(
     dop: degreeOfPolarization(inputStokes),
   });
 
-  // Propagate through each element
-  let current: JonesVec2 = input;
-  for (let i = 0; i < elements.length; i++) {
-    const M = getElementMatrix(elements[i]);
-    current = jonesMatVec(M, current);
+  // Track current state in both Jones and Stokes representations
+  let currentJones: JonesVec2 = input;
+  let currentStokes: [number, number, number, number] = inputStokes;
 
-    const stokes = stokesFromJones(current);
-    const analysis = analyzePolarization(current);
-    steps.push({
-      stepIndex: i,
-      element: elements[i],
-      jones: current,
-      stokes,
-      analysis,
-      dop: degreeOfPolarization(stokes),
-    });
+  // Propagate through each element
+  for (let i = 0; i < elements.length; i++) {
+    const element = elements[i];
+
+    if (element.type === 'depolarizer') {
+      // Depolarizer: use Mueller-Stokes calculus
+      const dFactor = element.depolFactor ?? 0;
+      const mDepol = depolarizerMueller(dFactor);
+      currentStokes = applyMuellerToStokes(mDepol, currentStokes);
+
+      // Compute equivalent Jones vector from the (partially depolarised) Stokes
+      // The Jones vector represents the polarised component only
+      const dop = degreeOfPolarization(currentStokes);
+      const [S0, S1, S2, S3] = currentStokes;
+
+      // Reconstruct an equivalent Jones vector from the polarised part
+      const S0safe = S0 === 0 ? 1 : S0;
+      const psi = Math.atan2(S2, S1) / 2;
+      const chi = 0.5 * Math.asin(Math.max(-1, Math.min(1, S3 / S0safe)));
+      const cosPsi = Math.cos(psi);
+      const sinPsi = Math.sin(psi);
+      const cosChi = Math.cos(chi);
+      const sinChi = Math.sin(chi);
+
+      // |E|² = S0 (total intensity, including unpolarised part)
+      // Reconstruct Jones vector from Stokes parameters:
+      //   Ex = amp · cos(ψ) · cos(χ)        (real part only)
+      //   Ey = amp · sin(ψ) · cos(χ) + i · amp · sin(χ)
+      // This gives the correct S2 and S3 via our convention: S3 = 2·Im(Ex*·Ey)
+      const amp = Math.sqrt(S0);
+      const exRe = amp * cosPsi * cosChi;
+      const exIm = 0;
+      const eyRe = amp * sinPsi * cosChi;
+      const eyIm = amp * sinChi;
+
+      currentJones = [[exRe, exIm], [eyRe, eyIm]];
+
+      const analysis = analyzePolarization(currentJones);
+      steps.push({
+        stepIndex: i,
+        element,
+        jones: currentJones,
+        stokes: currentStokes,
+        analysis,
+        dop,
+      });
+    } else {
+      // Standard Jones calculus element
+      const M = getElementMatrix(element);
+      currentJones = jonesMatVec(M, currentJones);
+      currentStokes = stokesFromJones(currentJones);
+
+      const analysis = analyzePolarization(currentJones);
+      steps.push({
+        stepIndex: i,
+        element,
+        jones: currentJones,
+        stokes: currentStokes,
+        analysis,
+        dop: degreeOfPolarization(currentStokes),
+      });
+    }
   }
 
   return steps;
