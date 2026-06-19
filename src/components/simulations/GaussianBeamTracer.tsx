@@ -503,8 +503,14 @@ function ContourfCanvas({
     canvas.style.height = `${ch}px`;
     ctx.scale(dpr, dpr);
 
-    const margin = { left: 40, right: 15, top: 20, bottom: 30 };
-    const plotSize = cw - margin.left - margin.right;
+    const margin = { left: 30, right: 30, top: 25, bottom: 25 };
+    const plotW = cw - margin.left - margin.right;
+    const plotH = ch - margin.top - margin.bottom;
+    const plotSize = Math.min(plotW, plotH); // square plot area for circular symmetry
+    const offX = (plotW - plotSize) / 2;     // center horizontally
+    const offY = (plotH - plotSize) / 2;     // center vertically
+    const plotLeft = margin.left + offX;
+    const plotTop = margin.top + offY;
 
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, cw, ch);
@@ -544,8 +550,11 @@ function ContourfCanvas({
     }
 
     // Draw filled contour levels
-    const xToP = (xv: number) => margin.left + ((xv / extent + 1) / 2) * plotSize;
-    const yToP = (yv: number) => margin.top + ((1 - (yv / extent + 1) / 2)) * plotSize;
+    const xToP = (xv: number) => plotLeft + ((xv / extent + 1) / 2) * plotSize;
+    const yToP = (yv: number) => plotTop + ((1 - (yv / extent + 1) / 2)) * plotSize;
+
+    const cellW = plotSize / NG;
+    const cellH = plotSize / NG;
 
     for (let lev = NLEVELS; lev >= 0; lev--) {
       const threshold = lev / NLEVELS;
@@ -557,13 +566,11 @@ function ContourfCanvas({
       ctx.fillStyle = `rgb(${blendR},${blendG},${blendB})`;
 
       // Draw pixels above this threshold
-      const cellW = plotSize / NG;
-      const cellH = plotSize / NG;
       for (let iy = 0; iy < NG; iy++) {
         for (let ix = 0; ix < NG; ix++) {
           if (grid[iy][ix] >= threshold) {
-            const px = margin.left + ix * cellW;
-            const py = margin.top + iy * cellH;
+            const px = plotLeft + ix * cellW;
+            const py = plotTop + iy * cellH;
             ctx.fillRect(px, py, cellW + 0.5, cellH + 0.5);
           }
         }
@@ -585,8 +592,8 @@ function ContourfCanvas({
           const code = v00 + v10 * 2 + v01 * 4 + v11 * 8;
           if (code === 0 || code === 15) continue;
           // Draw approximate contour segment through cell center
-          const cx = margin.left + (ix + 0.5) * cellW;
-          const cy = margin.top + (iy + 0.5) * cellH;
+          const cx = plotLeft + (ix + 0.5) * cellW;
+          const cy = plotTop + (iy + 0.5) * cellH;
           ctx.beginPath();
           if ((code & 3) === 1 || (code & 3) === 2) {
             ctx.moveTo(cx - cellW / 2, cy);
@@ -608,7 +615,7 @@ function ContourfCanvas({
       ctx.lineWidth = 1;
       ctx.setLineDash([3, 2]);
       ctx.beginPath();
-      ctx.arc(margin.left + plotSize / 2, margin.top + plotSize / 2, pinR, 0, 2 * Math.PI);
+      ctx.arc(plotLeft + plotSize / 2, plotTop + plotSize / 2, pinR, 0, 2 * Math.PI);
       ctx.stroke();
       ctx.setLineDash([]);
     }
@@ -617,9 +624,9 @@ function ContourfCanvas({
     ctx.fillStyle = "#333333";
     ctx.font = "italic 9px IBM Plex Sans";
     ctx.textAlign = "center";
-    ctx.fillText("x", margin.left + plotSize / 2, ch - 3);
+    ctx.fillText("x", plotLeft + plotSize / 2, ch - 3);
     ctx.save();
-    ctx.translate(10, margin.top + plotSize / 2);
+    ctx.translate(10, plotTop + plotSize / 2);
     ctx.rotate(-Math.PI / 2);
     ctx.fillText("y", 0, 0);
     ctx.restore();
@@ -631,15 +638,15 @@ function ContourfCanvas({
     for (let i = 0; i <= 4; i++) {
       const frac = i / 4;
       const val = -extent + frac * 2 * extent;
-      const px = margin.left + frac * plotSize;
-      ctx.fillText(formatSI(val, "m"), px, ch - margin.bottom + 12);
+      const px = plotLeft + frac * plotSize;
+      ctx.fillText(formatSI(val, "m"), px, plotTop + plotSize + 12);
     }
 
     // Title
     ctx.fillStyle = "#2d3142";
     ctx.font = "9px IBM Plex Sans";
     ctx.textAlign = "left";
-    ctx.fillText(`光斑剖面 z=${observationZ.toFixed(2)}m`, margin.left + 3, margin.top - 5);
+    ctx.fillText(`光斑剖面 z=${observationZ.toFixed(2)}m`, plotLeft + 3, plotTop - 5);
 
     } catch (err) {
       // Draw error message on canvas if something goes wrong
