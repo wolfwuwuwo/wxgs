@@ -11,6 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { blitImageData } from "@/lib/utils";
 
 import {
   calculateGaussianBeam,
@@ -33,6 +34,10 @@ import {
   type LensConfig,
 } from "@/lib/optics/gaussian-beam";
 import BeamProfileCanvas from "./BeamProfileCanvas";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { ControlPanel, MobilePanelToggle } from "./shared/ControlPanel";
+import { TearOffButton } from "./shared/TearOffPanel";
+import { useSnapshotTarget } from "@/hooks/use-snapshot-target";
 
 /* ─── Experiment Mode Type ─── */
 type ExperimentMode =
@@ -191,7 +196,7 @@ function MatlabBeamEnvelopeCanvas({
     const dpr = window.devicePixelRatio || 1;
     const cw = container.clientWidth;
     const ch = container.clientHeight;
-    if (cw === 0 || ch === 0) return;
+    if (cw < 100 || ch < 50) return;
     canvas.width = cw * dpr;
     canvas.height = ch * dpr;
     canvas.style.width = `${cw}px`;
@@ -497,6 +502,7 @@ function ContourfCanvas({
     const dpr = window.devicePixelRatio || 1;
     const cw = canvas.parentElement?.clientWidth || 300;
     const ch = cw;
+    if (cw < 100 || ch < 50) return;
     canvas.width = cw * dpr;
     canvas.height = ch * dpr;
     canvas.style.width = `${cw}px`;
@@ -696,6 +702,7 @@ function IntensityProfileCanvas({
     const dpr = window.devicePixelRatio || 1;
     const cw = canvas.parentElement?.clientWidth || 300;
     const ch = 180;
+    if (cw < 50) return;
     canvas.width = cw * dpr;
     canvas.height = ch * dpr;
     canvas.style.width = `${cw}px`;
@@ -814,6 +821,7 @@ function GouyPhaseCanvas({
     const dpr = window.devicePixelRatio || 1;
     const w = canvas.parentElement?.clientWidth || 600;
     const h = 300;
+    if (w < 50) return;
     canvas.width = w * dpr; canvas.height = h * dpr;
     canvas.style.width = `${w}px`; canvas.style.height = `${h}px`;
     ctx.scale(dpr, dpr);
@@ -920,6 +928,7 @@ function M2MeasurementCanvas({
     const dpr = window.devicePixelRatio || 1;
     const w = canvas.parentElement?.clientWidth || 600;
     const h = 280;
+    if (w < 50) return;
     canvas.width = w * dpr; canvas.height = h * dpr;
     canvas.style.width = `${w}px`; canvas.style.height = `${h}px`;
     ctx.scale(dpr, dpr);
@@ -1055,7 +1064,7 @@ function HGModeCanvas({
         imageData.data[idx + 3] = 255;
       }
     }
-    ctx.putImageData(imageData, 0, 0);
+    blitImageData(ctx, imageData, resolution, resolution);
     ctx.strokeStyle = "#d4d8e0"; ctx.lineWidth = 0.5; ctx.strokeRect(0, 0, size, size);
   }, [w0, zR, n, m, z, beamColor, size]);
   return <canvas ref={canvasRef} />;
@@ -1083,6 +1092,7 @@ function ParamScannerCanvas({
     const dpr = window.devicePixelRatio || 1;
     const cw = canvas.parentElement?.clientWidth || 600;
     const ch = 280;
+    if (cw < 50) return;
     canvas.width = cw * dpr; canvas.height = ch * dpr;
     canvas.style.width = `${cw}px`; canvas.style.height = `${ch}px`;
     ctx.scale(dpr, dpr);
@@ -1186,16 +1196,57 @@ export default function GaussianBeamTracer({
 }: {
   onBack: () => void;
 }) {
-  const [expMode, setExpMode] = useState<ExperimentMode>("basic");
+  const isMobile = useIsMobile();
+  const [panelOpen, setPanelOpen] = useState(false);
+  // ─── 实验状态缓存（步骤三：切换模块后恢复） ───
+  const cachedState = typeof window !== 'undefined'
+    ? (() => { try { return JSON.parse(localStorage.getItem('ops-lab-v3') || '{}')?.state?.['modern-gaussian']?.state || null } catch { return null } })()
+    : null
+  const [expMode, setExpMode] = useState<ExperimentMode>(cachedState?.expMode ?? "basic");
 
   // Basic mode state
-  const [w0, setW0] = useState(0.5); // mm
-  const [wavelength, setWavelength] = useState(632.8); // nm
-  const [propagationDistance, setPropagationDistance] = useState(5); // m
-  const [lensFocalLength, setLensFocalLength] = useState(0.5); // m
-  const [lensPosition, setLensPosition] = useState(0.5); // m
-  const [showLens, setShowLens] = useState(false);
-  const [observationZ, setObservationZ] = useState(0.5); // m
+  const [w0, setW0] = useState(cachedState?.w0 ?? 0.5); // mm
+  const [wavelength, setWavelength] = useState(cachedState?.wavelength ?? 632.8); // nm
+  const [propagationDistance, setPropagationDistance] = useState(cachedState?.propagationDistance ?? 5); // m
+  const [lensFocalLength, setLensFocalLength] = useState(cachedState?.lensFocalLength ?? 0.5); // m
+  const [lensPosition, setLensPosition] = useState(cachedState?.lensPosition ?? 0.5); // m
+  const [showLens, setShowLens] = useState(cachedState?.showLens ?? false);
+  const [observationZ, setObservationZ] = useState(cachedState?.observationZ ?? 0.5); // m
+
+  // ─── 可视化区域 ref（用于快照捕获 + 撕下面板） ───
+  const vizRef = useRef<HTMLDivElement>(null);
+
+  // ─── 快照目标注册 ───
+  useSnapshotTarget('modern-gaussian', {
+    targetRef: vizRef,
+    getTitle: () => `高斯光束 · w₀=${w0.toFixed(2)}mm · λ=${wavelength.toFixed(1)}nm · ${expMode}`,
+    getParams: () => [
+      { key: 'w₀', value: `${w0.toFixed(2)}mm` },
+      { key: 'λ', value: `${wavelength.toFixed(1)}nm` },
+      { key: 'z', value: `${propagationDistance.toFixed(2)}m` },
+      { key: '模式', value: expMode },
+      ...(showLens ? [{ key: 'f透镜', value: `${lensFocalLength.toFixed(2)}m` }] : []),
+    ],
+  })
+
+  // ─── 状态缓存：卸载时保存 ───
+  useEffect(() => {
+    return () => {
+      try {
+        const store = JSON.parse(localStorage.getItem('ops-lab-v3') || '{}')
+        if (!store.state) store.state = {}
+        store.state['modern-gaussian'] = {
+          viewId: 'modern-gaussian',
+          state: {
+            expMode, w0, wavelength, propagationDistance,
+            lensFocalLength, lensPosition, showLens, observationZ,
+          },
+          updatedAt: new Date().toISOString(),
+        }
+        localStorage.setItem('ops-lab-v3', JSON.stringify(store))
+      } catch { /* ignore */ }
+    }
+  }, [expMode, w0, wavelength, propagationDistance, lensFocalLength, lensPosition, showLens, observationZ])
 
   // Multi-lens system (up to 5)
   const [lenses, setLenses] = useState<LensConfig[]>([
@@ -1334,36 +1385,79 @@ export default function GaussianBeamTracer({
   return (
     <div className="flex h-full flex-col" style={{ background: "#FFFFFF" }}>
       {/* Header bar */}
-      <div className="flex flex-shrink-0 items-center flex-wrap" style={{ height: "48px", backgroundColor: "#FFFFFF", borderBottom: "1px solid #d4d8e0", paddingLeft: "24px", paddingRight: "24px" }}>
+      <div
+        className={isMobile ? "flex flex-shrink-0 items-center" : "flex flex-shrink-0 items-center flex-wrap"}
+        style={{
+          height: isMobile ? "44px" : "48px",
+          backgroundColor: "#FFFFFF",
+          borderBottom: "1px solid #d4d8e0",
+          paddingLeft: isMobile ? "16px" : "24px",
+          paddingRight: isMobile ? "16px" : "24px",
+        }}
+      >
         <button onClick={onBack} className="flex items-center gap-1 border-none bg-none text-[12px] font-normal text-[#555555] transition-colors duration-200 hover:text-[#1a1a1a]" style={{ cursor: "pointer" }}>
           ← 返回
         </button>
         <span style={{ margin: "0 12px", color: "#D0D0D0" }}>|</span>
-        <h1 className="m-0 text-[20px] font-semibold text-[#1A1A1A]" style={{ fontFamily: "var(--font-ibm-plex-sans), system-ui, sans-serif" }}>
+        <h1
+          className="m-0 font-semibold text-[#1A1A1A]"
+          style={{
+            fontFamily: "system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif",
+            fontSize: isMobile ? "17px" : "20px",
+          }}
+        >
           高斯光束追踪器
         </h1>
 
-        {/* Mode tabs */}
-        <div className="ml-4 flex gap-1 flex-wrap">
+        {/* Mode tabs — horizontal scroll on mobile */}
+        <div
+          className={isMobile
+            ? "ml-2 flex gap-1 overflow-x-auto mobile-x-scroll flex-1 min-w-0"
+            : "ml-4 flex gap-1 flex-wrap"}
+          style={isMobile ? { msOverflowStyle: "none", scrollbarWidth: "none" } : undefined}
+        >
           {(Object.keys(MODE_LABELS) as ExperimentMode[]).map((mode) => (
             <button key={mode} onClick={() => setExpMode(mode)}
-              className="border-[1px] px-2 py-1 text-[10px] transition-colors duration-150"
-              style={{ fontFamily: "var(--font-ibm-plex-sans), system-ui, sans-serif", borderColor: expMode === mode ? "#333333" : "#d4d8e0", backgroundColor: expMode === mode ? "#F0F3F6" : "#ffffff", fontWeight: expMode === mode ? 600 : 400, color: expMode === mode ? "#1a1a2e" : "#6b7280", cursor: "pointer", borderRadius: "2px" }}
+              className="border-[1px] px-2 py-1 text-[10px] transition-colors duration-150 whitespace-nowrap"
+              style={{ fontFamily: "system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif", borderColor: expMode === mode ? "#333333" : "#d4d8e0", backgroundColor: expMode === mode ? "#F0F3F6" : "#ffffff", fontWeight: expMode === mode ? 600 : 400, color: expMode === mode ? "#1a1a2e" : "#6b7280", cursor: "pointer", borderRadius: "2px" }}
             >
               {MODE_LABELS[mode]}
             </button>
           ))}
         </div>
+
+        {/* Mobile-only panel toggle */}
+        {isMobile && (
+          <MobilePanelToggle onClick={() => setPanelOpen(true)} label="参数" />
+        )}
+        <TearOffButton
+          viewId="modern-gaussian"
+          title={`高斯光束 · w₀=${w0.toFixed(2)}mm · λ=${wavelength.toFixed(1)}nm`}
+          params={[
+            { key: 'w₀', value: `${w0.toFixed(2)}mm` },
+            { key: 'λ', value: `${wavelength.toFixed(1)}nm` },
+            { key: 'z', value: `${propagationDistance.toFixed(2)}m` },
+            { key: '模式', value: expMode },
+          ]}
+          targetRef={vizRef}
+          panelWidth={320}
+          label="撕下对比"
+        />
       </div>
 
       {/* Main content */}
       <div className="flex flex-1" style={{ minHeight: 0 }}>
-        {/* Left Control Panel */}
-        <div className="w-72 shrink-0 overflow-y-auto border-r border-[#d4d8e0] bg-[#f8f9fb] p-4 custom-scrollbar">
+        {/* Left Control Panel — uses shared ControlPanel wrapper (inline on desktop, slide-in drawer on mobile) */}
+        <ControlPanel
+          open={panelOpen}
+          onClose={() => setPanelOpen(false)}
+          title="实验参数"
+          desktopWidth="w-72"
+        >
           <div className="space-y-5">
             {/* ─── Basic Controls (shared) ─── */}
             <div>
-              <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-[#6b7280]" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>光束参数</h3>
+              <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-[#6b7280]" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>光束参数</h3>
 
               {/* Wavelength */}
               <div className="mb-4 space-y-1.5">
@@ -1405,7 +1499,7 @@ export default function GaussianBeamTracer({
               <>
                 <div className="border-t border-[#d4d8e0] pt-4">
                   <div className="mb-3 flex items-center justify-between">
-                    <h3 className="text-[11px] font-semibold uppercase tracking-wider text-[#6b7280]" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>透镜</h3>
+                    <h3 className="text-[11px] font-semibold uppercase tracking-wider text-[#6b7280]" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>透镜</h3>
                     <Switch checked={showLens} onCheckedChange={setShowLens} />
                   </div>
                   {showLens && (
@@ -1429,7 +1523,7 @@ export default function GaussianBeamTracer({
                 </div>
 
                 <div className="border-t border-[#d4d8e0] pt-4">
-                  <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-[#6b7280]" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>观测点</h3>
+                  <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-[#6b7280]" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>观测点</h3>
                   <div className="mb-3 space-y-1.5">
                     <div className="flex items-center justify-between">
                       <Label className="text-[12px] text-[#2d3142]">观测位置 z</Label>
@@ -1440,7 +1534,7 @@ export default function GaussianBeamTracer({
                 </div>
 
                 <div className="border-t border-[#d4d8e0] pt-4">
-                  <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-[#6b7280]" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>计算结果</h3>
+                  <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-[#6b7280]" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>计算结果</h3>
                   <div className="space-y-2 rounded border border-[#d4d8e0] bg-white p-3">
                     <div className="flex items-center justify-between">
                       <span className="text-[11px] text-[#6b7280]">瑞利范围 z_R</span>
@@ -1476,7 +1570,7 @@ export default function GaussianBeamTracer({
               <>
                 <div className="border-t border-[#d4d8e0] pt-4">
                   <div className="mb-3 flex items-center justify-between">
-                    <h3 className="text-[11px] font-semibold uppercase tracking-wider text-[#6b7280]" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>透镜组 ({lenses.length}/5)</h3>
+                    <h3 className="text-[11px] font-semibold uppercase tracking-wider text-[#6b7280]" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>透镜组 ({lenses.length}/5)</h3>
                     <button onClick={addLens} disabled={lenses.length >= 5}
                       className="border border-[#d4d8e0] bg-white px-2 py-0.5 text-[10px] text-[#6b7280] hover:bg-[#f0f3f6] disabled:opacity-40"
                       style={{ cursor: "pointer", borderRadius: "2px" }}
@@ -1510,7 +1604,7 @@ export default function GaussianBeamTracer({
 
                 {/* Observation point */}
                 <div className="border-t border-[#d4d8e0] pt-4">
-                  <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-[#6b7280]" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>观测点</h3>
+                  <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-[#6b7280]" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>观测点</h3>
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between">
                       <Label className="text-[12px] text-[#2d3142]">观测位置 z</Label>
@@ -1523,7 +1617,7 @@ export default function GaussianBeamTracer({
                 {/* Mode matching info */}
                 {expMode === "mode-matching" && (
                   <div className="border-t border-[#d4d8e0] pt-4">
-                    <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-[#6b7280]" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>耦合效率</h3>
+                    <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-[#6b7280]" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>耦合效率</h3>
                     <div className="rounded border border-[#d4d8e0] bg-white p-3 space-y-2">
                       <div className="flex items-center justify-between">
                         <span className="text-[11px] text-[#6b7280]">η 模式耦合效率</span>
@@ -1544,7 +1638,7 @@ export default function GaussianBeamTracer({
                 {/* Spatial filter pinhole */}
                 {expMode === "spatial-filter" && (
                   <div className="border-t border-[#d4d8e0] pt-4">
-                    <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-[#6b7280]" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>空间滤波器</h3>
+                    <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-[#6b7280]" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>空间滤波器</h3>
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between">
                         <Label className="text-[12px] text-[#2d3142]">针孔直径</Label>
@@ -1560,7 +1654,7 @@ export default function GaussianBeamTracer({
 
                 {/* Chain result info */}
                 <div className="border-t border-[#d4d8e0] pt-4">
-                  <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-[#6b7280]" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>ABCD链结果</h3>
+                  <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-[#6b7280]" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>ABCD链结果</h3>
                   <div className="rounded border border-[#d4d8e0] bg-white p-2.5 space-y-1 text-[10px]">
                     {chainResult.segments.map((seg, i) => (
                       <div key={i} className="flex items-center justify-between">
@@ -1582,7 +1676,7 @@ export default function GaussianBeamTracer({
             {/* ─── GOUY PHASE ─── */}
             {expMode === "gouy-phase" && (
               <div className="border-t border-[#d4d8e0] pt-4">
-                <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-[#6b7280]" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>观测点</h3>
+                <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-[#6b7280]" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>观测点</h3>
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
                     <Label className="text-[12px] text-[#2d3142]">观测位置 z</Label>
@@ -1607,7 +1701,7 @@ export default function GaussianBeamTracer({
             {expMode === "m2-measurement" && (
               <>
                 <div className="border-t border-[#d4d8e0] pt-4">
-                  <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-[#6b7280]" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>M²参数</h3>
+                  <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-[#6b7280]" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>M²参数</h3>
                   <div className="space-y-1.5 mb-3">
                     <div className="flex items-center justify-between">
                       <Label className="text-[12px] text-[#2d3142]">真实 M²</Label>
@@ -1663,7 +1757,7 @@ export default function GaussianBeamTracer({
             {expMode === "higher-order" && (
               <>
                 <div className="border-t border-[#d4d8e0] pt-4">
-                  <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-[#6b7280]" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>HG模式</h3>
+                  <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-[#6b7280]" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>HG模式</h3>
                   <div className="space-y-1.5 mb-3">
                     <div className="flex items-center justify-between">
                       <Label className="text-[12px] text-[#2d3142]">n</Label>
@@ -1696,7 +1790,7 @@ export default function GaussianBeamTracer({
             {/* ─── PARAM SCANNER ─── */}
             {expMode === "param-scanner" && (
               <div className="border-t border-[#d4d8e0] pt-4">
-                <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-[#6b7280]" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>扫描参数</h3>
+                <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-[#6b7280]" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>扫描参数</h3>
                 <div className="space-y-1.5 mb-3">
                   <Label className="text-[12px] text-[#2d3142]">参数选择</Label>
                   <Select value={scanParam} onValueChange={(v) => { setScanParam(v as "wavelength" | "beam-waist"); if (v === "wavelength") { setScanMin(405); setScanMax(700); } else { setScanMin(0.1); setScanMax(3); } }}>
@@ -1733,27 +1827,38 @@ export default function GaussianBeamTracer({
 
             {/* Formula Reference Card (shared) */}
             <div className="border-t border-[#d4d8e0] pt-4">
-              <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[#6b7280]" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>公式参考</h3>
+              <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[#6b7280]" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>公式参考</h3>
               <div className="rounded border border-[#d4d8e0] bg-white p-2.5 space-y-1">
-                <p className="text-[10px] text-[#6b7280]" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>w(z) = w₀√(1+(z/z_R)²)</p>
-                <p className="text-[10px] text-[#6b7280]" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>z_R = πw₀²/λ</p>
-                <p className="text-[10px] text-[#6b7280]" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>ψ(z) = arctan(z/z_R)</p>
-                <p className="text-[10px] text-[#6b7280]" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>R(z) = z(1+(z_R/z)²)</p>
-                <p className="text-[10px] text-[#9ca3af]" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>M²修正: w=w₀√(1+M⁴(z/z_R)²)</p>
+                <p className="text-[10px] text-[#6b7280]" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>w(z) = w₀√(1+(z/z_R)²)</p>
+                <p className="text-[10px] text-[#6b7280]" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>z_R = πw₀²/λ</p>
+                <p className="text-[10px] text-[#6b7280]" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>ψ(z) = arctan(z/z_R)</p>
+                <p className="text-[10px] text-[#6b7280]" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>R(z) = z(1+(z_R/z)²)</p>
+                <p className="text-[10px] text-[#9ca3af]" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>M²修正: w=w₀√(1+M⁴(z/z_R)²)</p>
               </div>
             </div>
           </div>
-        </div>
+        </ControlPanel>
 
         {/* Right Visualization Area */}
-        <div className="flex-1 flex flex-col overflow-hidden" style={{ minHeight: 0 }}>
+        <div
+          ref={vizRef}
+          className={isMobile
+            ? "flex-1 flex flex-col overflow-y-auto custom-scrollbar"
+            : "flex-1 flex flex-col overflow-hidden"}
+          style={{ minHeight: 0 }}
+        >
           {/* Subplot layout for modes with 3D + contourf + profile */}
           {(expMode === "basic" || expMode === "lens-transform" || expMode === "mode-matching" || expMode === "spatial-filter") && (
-            <div className="flex-1 flex flex-col" style={{ minHeight: 0 }}>
+            <div className={isMobile ? "flex flex-col" : "flex-1 flex flex-col"} style={{ minHeight: 0 }}>
               {/* Top row: 3D envelope (60%) + Contourf (40%) */}
-              <div className="flex" style={{ height: "60%", minHeight: 0 }}>
+              <div className={isMobile ? "flex flex-col" : "flex"} style={isMobile ? undefined : { height: "60%", minHeight: 0 }}>
                 {/* 3D Beam Envelope */}
-                <div className="relative" style={{ width: "60%", borderRight: "1px solid #d4d8e0" }}>
+                <div
+                  className="relative"
+                  style={isMobile
+                    ? { width: "100%", height: "320px", borderBottom: "1px solid #d4d8e0", flexShrink: 0 }
+                    : { width: "60%", borderRight: "1px solid #d4d8e0" }}
+                >
                   <MatlabBeamEnvelopeCanvas
                     widthAt={widthAt}
                     w0={w0 * 1e-3}
@@ -1765,7 +1870,12 @@ export default function GaussianBeamTracer({
                   />
                 </div>
                 {/* Contourf cross-section */}
-                <div className="relative" style={{ width: "40%" }}>
+                <div
+                  className="relative"
+                  style={isMobile
+                    ? { width: "100%", height: "300px", flexShrink: 0 }
+                    : { width: "40%" }}
+               >
                   <ContourfCanvas
                     widthAt={widthAt}
                     w0={w0 * 1e-3}
@@ -1777,8 +1887,13 @@ export default function GaussianBeamTracer({
                 </div>
               </div>
               {/* Bottom: Beam profile envelope + Intensity profile */}
-              <div className="flex" style={{ height: "40%", minHeight: 0, borderTop: "1px solid #d4d8e0" }}>
-                <div style={{ width: "60%", borderRight: "1px solid #d4d8e0" }}>
+              <div
+                className={isMobile ? "flex flex-col" : "flex"}
+                style={isMobile ? undefined : { height: "40%", minHeight: 0, borderTop: "1px solid #d4d8e0" }}
+              >
+                <div style={isMobile
+                  ? { width: "100%", height: "180px", borderBottom: "1px solid #d4d8e0", flexShrink: 0 }
+                  : { width: "60%", borderRight: "1px solid #d4d8e0" }}>
                   <BeamProfileCanvas
                     beamParams={beamParams}
                     wavelength={wavelength}
@@ -1787,7 +1902,7 @@ export default function GaussianBeamTracer({
                     showObservationPoint={true}
                   />
                 </div>
-                <div style={{ width: "40%" }}>
+                <div style={isMobile ? { width: "100%", height: "180px", flexShrink: 0 } : { width: "40%" }}>
                   <IntensityProfileCanvas
                     widthAt={widthAt}
                     w0={w0 * 1e-3}
@@ -1802,8 +1917,8 @@ export default function GaussianBeamTracer({
 
           {/* Gouy Phase mode */}
           {expMode === "gouy-phase" && (
-            <div className="flex-1 flex flex-col" style={{ minHeight: 0 }}>
-              <div style={{ height: "55%", minHeight: 0 }}>
+            <div className={isMobile ? "flex flex-col" : "flex-1 flex flex-col"} style={{ minHeight: 0 }}>
+              <div style={isMobile ? { width: "100%", height: "320px", borderBottom: "1px solid #d4d8e0" } : { height: "55%", minHeight: 0 }}>
                 <MatlabBeamEnvelopeCanvas
                   widthAt={widthAt}
                   w0={w0 * 1e-3}
@@ -1814,7 +1929,7 @@ export default function GaussianBeamTracer({
                   wavelengthNm={wavelength}
                 />
               </div>
-              <div style={{ height: "45%", borderTop: "1px solid #d4d8e0" }}>
+              <div style={isMobile ? { width: "100%" } : { height: "45%", borderTop: "1px solid #d4d8e0" }}>
                 <GouyPhaseCanvas
                   w0={w0 * 1e-3}
                   wavelength={wavelength * 1e-9}
@@ -1829,8 +1944,8 @@ export default function GaussianBeamTracer({
 
           {/* M² Measurement mode */}
           {expMode === "m2-measurement" && (
-            <div className="flex-1 flex flex-col" style={{ minHeight: 0 }}>
-              <div style={{ height: "50%", minHeight: 0 }}>
+            <div className={isMobile ? "flex flex-col" : "flex-1 flex flex-col"} style={{ minHeight: 0 }}>
+              <div style={isMobile ? { width: "100%", height: "320px", borderBottom: "1px solid #d4d8e0" } : { height: "50%", minHeight: 0 }}>
                 <MatlabBeamEnvelopeCanvas
                   widthAt={widthAt}
                   w0={w0 * 1e-3}
@@ -1841,7 +1956,7 @@ export default function GaussianBeamTracer({
                   wavelengthNm={wavelength}
                 />
               </div>
-              <div style={{ height: "50%", borderTop: "1px solid #d4d8e0" }}>
+              <div style={isMobile ? { width: "100%" } : { height: "50%", borderTop: "1px solid #d4d8e0" }}>
                 <M2MeasurementCanvas
                   w0={w0 * 1e-3}
                   wavelength={wavelength * 1e-9}
@@ -1859,14 +1974,14 @@ export default function GaussianBeamTracer({
           {/* Higher Order mode */}
           {expMode === "higher-order" && (
             <div className="flex-1 flex flex-col p-4 gap-4 overflow-y-auto custom-scrollbar" style={{ minHeight: 0 }}>
-              <div className="flex gap-4">
+              <div className={isMobile ? "flex flex-col gap-4" : "flex gap-4"}>
                 <div>
                   <p className="text-[10px] text-[#6b7280] mb-1">HG{hgN}{hgM} 光斑 (z={hgZ.toFixed(2)}m)</p>
                   <HGModeCanvas w0={w0 * 1e-3} zR={zR} n={hgN} m={hgM} z={hgZ} beamColor={beamColor} size={200} />
                 </div>
               </div>
               {show3DMode && (
-                <div style={{ height: "350px" }}>
+                <div style={{ height: isMobile ? "280px" : "350px", width: "100%" }}>
                   <p className="text-[10px] text-[#6b7280] mb-1">3D 强度表面</p>
                   {/* Placeholder for 3D HG surface - use beam envelope as approximation */}
                   <MatlabBeamEnvelopeCanvas
@@ -1885,8 +2000,8 @@ export default function GaussianBeamTracer({
 
           {/* Parameter Scanner mode */}
           {expMode === "param-scanner" && (
-            <div className="flex-1 flex flex-col" style={{ minHeight: 0 }}>
-              <div style={{ height: "50%", minHeight: 0 }}>
+            <div className={isMobile ? "flex flex-col" : "flex-1 flex flex-col"} style={{ minHeight: 0 }}>
+              <div style={isMobile ? { width: "100%", height: "300px", borderBottom: "1px solid #d4d8e0" } : { height: "50%", minHeight: 0 }}>
                 <ParamScannerCanvas
                   w0={w0}
                   wavelengthNm={wavelength}
@@ -1898,7 +2013,7 @@ export default function GaussianBeamTracer({
                   scanSteps={scanSteps}
                 />
               </div>
-              <div style={{ height: "50%", borderTop: "1px solid #d4d8e0" }}>
+              <div style={isMobile ? { width: "100%", height: "320px" } : { height: "50%", borderTop: "1px solid #d4d8e0" }}>
                 <MatlabBeamEnvelopeCanvas
                   widthAt={widthAt}
                   w0={w0 * 1e-3}
@@ -1915,10 +2030,24 @@ export default function GaussianBeamTracer({
       </div>
 
       {/* Footer */}
-      <div className="flex-shrink-0 flex items-center justify-between px-6 h-6 border-t border-[#d4d8e0] bg-[#f8f9fb] mt-auto" style={{ fontSize: "10px", color: "#9ca3af" }}>
-        <span>v2.0 · 高斯光束追踪器 — ABCD矩阵 · 3D包络 · contourf</span>
-        <span style={{ fontFamily: "var(--font-ibm-plex-mono)" }} className="tabular-nums">
-          λ={wavelength}nm w₀={w0.toFixed(2)}mm z_R={formatSI(zR, "m")}
+      <div
+        className="flex-shrink-0 flex items-center justify-between h-6 border-t border-[#d4d8e0] bg-[#f8f9fb] mt-auto"
+        style={{
+          fontSize: isMobile ? "9px" : "10px",
+          color: "#9ca3af",
+          paddingLeft: isMobile ? "16px" : "24px",
+          paddingRight: isMobile ? "16px" : "24px",
+        }}
+      >
+        <span style={isMobile ? { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginRight: "8px" } : undefined}>
+          {isMobile
+            ? "v2.0 · 高斯光束追踪器"
+            : "v2.0 · 高斯光束追踪器 — ABCD矩阵 · 3D包络 · contourf"}
+        </span>
+        <span style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }} className="tabular-nums">
+          {isMobile
+            ? `λ=${wavelength}nm`
+            : `λ=${wavelength}nm w₀=${w0.toFixed(2)}mm z_R=${formatSI(zR, "m")}`}
         </span>
       </div>
     </div>

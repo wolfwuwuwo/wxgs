@@ -44,6 +44,7 @@ function BeamProfileCanvas({
     const dpr = window.devicePixelRatio || 1;
     const w = canvas.parentElement?.clientWidth || 600;
     const h = showGouyMode ? 240 : 180;
+    if (w < 50) return;
     canvas.width = w * dpr;
     canvas.height = h * dpr;
     canvas.style.width = `${w}px`;

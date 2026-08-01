@@ -7,6 +7,13 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { ControlPanel, MobilePanelToggle } from "./shared/ControlPanel";
+import { Knob } from "./shared/Knob";
+import { ExperimentChecklist, type ChecklistStep } from "./shared/ExperimentChecklist";
+import { TearOffButton } from "./shared/TearOffPanel";
+import { useSnapshotTarget } from "@/hooks/use-snapshot-target";
+import { useExperimentState } from "@/hooks/use-experiment-state";
 import {
   SUBSTANCE_PRESETS,
   WAVELENGTH_OPTIONS,
@@ -399,7 +406,7 @@ function OpticalBenchCanvas({
     }
   }, [wavelength, hasSample, sampleName, analyzerAngle, beamColor, intensity, measurementMode, shadowAngle]);
 
-  return <canvas ref={canvasRef} className="border border-[#d4d8e0] bg-white" />;
+  return <canvas ref={canvasRef} className="border border-[#d4d8e0] bg-white" style={{ maxWidth: '100%', height: 'auto' }} />;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -588,7 +595,7 @@ function AnalyzerDialCanvas({
     };
   }, [onAngleChange, isDraggingRef]);
 
-  return <canvas ref={canvasRef} className="border border-[#d4d8e0] bg-white cursor-grab active:cursor-grabbing" />;
+  return <canvas ref={canvasRef} className="border border-[#d4d8e0] bg-white cursor-grab active:cursor-grabbing" style={{ maxWidth: '100%', height: 'auto', touchAction: 'none' }} />;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -724,7 +731,7 @@ function MalusLawCanvas({
     ctx.fillText("光强曲线 I = I₀cos²(θ−φ)", margin.left + 4, margin.top + 10);
   }, [analyzerAngle, extinctionAngle, zeroAngle, showTheoretical, theoreticalExtinction]);
 
-  return <canvas ref={canvasRef} className="border border-[#d4d8e0] bg-white" />;
+  return <canvas ref={canvasRef} className="border border-[#d4d8e0] bg-white" style={{ maxWidth: '100%', height: 'auto' }} />;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -830,7 +837,7 @@ function TripleFieldEyepieceCanvas({
     ctx.fillText(stateLabel, w / 2, h - 3);
   }, [edgeIntensity, centerIntensity, fieldState, nearZero, greenFlashOn, beamColor]);
 
-  return <canvas ref={canvasRef} className="border border-[#d4d8e0] bg-white" />;
+  return <canvas ref={canvasRef} className="border border-[#d4d8e0] bg-white" style={{ maxWidth: '100%', height: 'auto' }} />;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -978,7 +985,7 @@ function BrightnessDiffCanvas({
     ctx.fillText("亮度差 ΔI = |I_mid − I_edge|", margin.left + 4, margin.top + 10);
   }, [analyzerAngle, opticalRotation, shadowAngle, zeroAngle, showTheoretical, theoreticalRotation]);
 
-  return <canvas ref={canvasRef} className="border border-[#d4d8e0] bg-white" />;
+  return <canvas ref={canvasRef} className="border border-[#d4d8e0] bg-white" style={{ maxWidth: '100%', height: 'auto' }} />;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1077,7 +1084,7 @@ function DispersionCurveCanvas({
     ctx.fillText("旋光色散 [α](λ) = A/(λ²−λ₀²)", margin.left + 4, margin.top + 10);
   }, [data, currentWavelength, currentSpecRot, beamColor]);
 
-  return <canvas ref={canvasRef} className="border border-[#d4d8e0] bg-white" />;
+  return <canvas ref={canvasRef} className="border border-[#d4d8e0] bg-white" style={{ maxWidth: '100%', height: 'auto' }} />;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1176,34 +1183,78 @@ function MutarotationCurveCanvas({
     ctx.fillText("变旋曲线 α(t) = α∞ + (α₀−α∞)e⁻ᵏᵗ", margin.left + 4, margin.top + 10);
   }, [data, currentTime]);
 
-  return <canvas ref={canvasRef} className="border border-[#d4d8e0] bg-white" />;
+  return <canvas ref={canvasRef} className="border border-[#d4d8e0] bg-white" style={{ maxWidth: '100%', height: 'auto' }} />;
 }
 
 // ═══════════════════════════════════════════════════════════════════
 // Main Component
 // ═══════════════════════════════════════════════════════════════════
 export default function PolarimeterExperiment({ onBack }: { onBack: () => void }) {
+  const isMobile = useIsMobile();
+  const [panelOpen, setPanelOpen] = useState(false);
+  // ─── 实验状态缓存（步骤三：切换模块后恢复） ───
+  const cachedState = typeof window !== 'undefined'
+    ? (() => { try { return JSON.parse(localStorage.getItem('ops-lab-v3') || '{}')?.state?.['physical-polarimeter']?.state || null } catch { return null } })()
+    : null
   // ─── Core state ───
-  const [analyzerAngle, setAnalyzerAngle] = useState(90.0);
-  const [sampleInserted, setSampleInserted] = useState(false);
-  const [selectedPreset, setSelectedPreset] = useState(0);
-  const [customSpecRotation, setCustomSpecRotation] = useState(0);
-  const [customConcentration, setCustomConcentration] = useState(0.1);
-  const [customTubeLength, setCustomTubeLength] = useState(2);
-  const [wavelengthIdx, setWavelengthIdx] = useState(0);
-  const [zeroAngle, setZeroAngle] = useState<number | null>(null);
-  const [measurementAngle, setMeasurementAngle] = useState<number | null>(null);
+  const [analyzerAngle, setAnalyzerAngle] = useState(cachedState?.analyzerAngle ?? 90.0);
+  const [sampleInserted, setSampleInserted] = useState(cachedState?.sampleInserted ?? false);
+  const [selectedPreset, setSelectedPreset] = useState(cachedState?.selectedPreset ?? 0);
+  const [customSpecRotation, setCustomSpecRotation] = useState(cachedState?.customSpecRotation ?? 0);
+  const [customConcentration, setCustomConcentration] = useState(cachedState?.customConcentration ?? 0.1);
+  const [customTubeLength, setCustomTubeLength] = useState(cachedState?.customTubeLength ?? 2);
+  const [wavelengthIdx, setWavelengthIdx] = useState(cachedState?.wavelengthIdx ?? 0);
+  const [zeroAngle, setZeroAngle] = useState<number | null>(cachedState?.zeroAngle ?? null);
+  const [measurementAngle, setMeasurementAngle] = useState<number | null>(cachedState?.measurementAngle ?? null);
 
   // ─── Advanced features state ───
-  const [temperature, setTemperature] = useState(20);
-  const [mutarotTime, setMutarotTime] = useState(0);
+  const [temperature, setTemperature] = useState(cachedState?.temperature ?? 20);
+  const [mutarotTime, setMutarotTime] = useState(cachedState?.mutarotTime ?? 0);
   const [mutarotRunning, setMutarotRunning] = useState(false);
-  const [experimentMode, setExperimentMode] = useState<ExperimentMode>("zero");
+  const [experimentMode, setExperimentMode] = useState<ExperimentMode>(cachedState?.experimentMode ?? "zero");
 
   // ─── Mixture state ───
-  const [mixtureGlucose, setMixtureGlucose] = useState(0.05);
-  const [mixtureFructose, setMixtureFructose] = useState(0.05);
-  const [mixturePH, setMixturePH] = useState(7.0);
+  const [mixtureGlucose, setMixtureGlucose] = useState(cachedState?.mixtureGlucose ?? 0.05);
+  const [mixtureFructose, setMixtureFructose] = useState(cachedState?.mixtureFructose ?? 0.05);
+  const [mixturePH, setMixturePH] = useState(cachedState?.mixturePH ?? 7.0);
+
+  // ─── 可视化区域 ref（用于快照捕获 + 撕下面板） ───
+  const vizRef = useRef<HTMLDivElement>(null);
+
+  // ─── 快照目标注册（StatusBar 快照按钮触发） ───
+  useSnapshotTarget('physical-polarimeter', {
+    targetRef: vizRef,
+    getTitle: () => `旋光仪 · 检偏角 ${analyzerAngle.toFixed(1)}° · ${WAVELENGTH_OPTIONS[wavelengthIdx].label}`,
+    getParams: () => [
+      { key: 'λ', value: `${WAVELENGTH_OPTIONS[wavelengthIdx].value}nm` },
+      { key: 'θ分析', value: `${analyzerAngle.toFixed(1)}°` },
+      { key: '样品', value: sampleInserted ? SAMPLE_PRESETS_EXT[selectedPreset]?.name || '自定义' : '未放入' },
+      { key: '温度', value: `${temperature}°C` },
+      ...(zeroAngle != null ? [{ key: 'θ零位', value: `${zeroAngle.toFixed(2)}°` }] : []),
+      ...(measurementAngle != null ? [{ key: 'θ测', value: `${measurementAngle.toFixed(2)}°` }] : []),
+    ],
+  })
+
+  // ─── 状态缓存：卸载时保存 ───
+  useEffect(() => {
+    return () => {
+      try {
+        const store = JSON.parse(localStorage.getItem('ops-lab-v3') || '{}')
+        if (!store.state) store.state = {}
+        store.state['physical-polarimeter'] = {
+          viewId: 'physical-polarimeter',
+          state: {
+            analyzerAngle, sampleInserted, selectedPreset,
+            customSpecRotation, customConcentration, customTubeLength,
+            wavelengthIdx, zeroAngle, measurementAngle,
+            temperature, experimentMode, mixtureGlucose, mixtureFructose, mixturePH,
+          },
+          updatedAt: new Date().toISOString(),
+        }
+        localStorage.setItem('ops-lab-v3', JSON.stringify(store))
+      } catch { /* ignore */ }
+    }
+  }, [analyzerAngle, sampleInserted, selectedPreset, wavelengthIdx, zeroAngle, measurementAngle, temperature, experimentMode])
 
   // ─── Triple-field state ───
   const [measurementMode, setMeasurementMode] = useState<MeasurementMode>("extinction");
@@ -1536,11 +1587,11 @@ export default function PolarimeterExperiment({ onBack }: { onBack: () => void }
   }, []);
 
   return (
-    <div className="min-h-screen flex flex-col" style={{ background: "#FFFFFF" }}>
+    <div className="h-full flex flex-col" style={{ background: "#FFFFFF" }}>
       {/* Header */}
       <div className="flex-shrink-0 flex items-center" style={{
-        height: "48px", backgroundColor: "#FFFFFF",
-        borderBottom: "1px solid #CCCCCC", paddingLeft: "24px", paddingRight: "24px",
+        height: isMobile ? "44px" : "48px", backgroundColor: "#FFFFFF",
+        borderBottom: "1px solid #CCCCCC", paddingLeft: isMobile ? "16px" : "24px", paddingRight: isMobile ? "16px" : "24px",
       }}>
         <button onClick={onBack} style={{
           fontSize: "12px", fontWeight: 400, color: "#555555",
@@ -1552,19 +1603,35 @@ export default function PolarimeterExperiment({ onBack }: { onBack: () => void }
           ← 返回
         </button>
         <span style={{ margin: "0 12px", color: "#D0D0D0" }}>|</span>
-        <h1 style={{ fontSize: "20px", fontWeight: 600, color: "#1A1A1A", margin: 0 }}>
+        <h1 style={{ fontSize: isMobile ? "17px" : "20px", fontWeight: 600, color: "#1A1A1A", margin: 0 }}>
           旋光仪实验
         </h1>
-        <span style={{ marginLeft: "12px", fontSize: "9px", color: "#888888",
-          border: "1px solid #D0D0D0", borderRadius: "2px", padding: "1px 6px" }}>
-          优化版
-        </span>
+        {!isMobile && (
+          <span style={{ marginLeft: "12px", fontSize: "9px", color: "#888888",
+            border: "1px solid #D0D0D0", borderRadius: "2px", padding: "1px 6px" }}>
+            优化版
+          </span>
+        )}
+        <MobilePanelToggle onClick={() => setPanelOpen(true)} label="参数" />
+        <TearOffButton
+          viewId="physical-polarimeter"
+          title={`旋光仪 · θ=${analyzerAngle.toFixed(1)}° · ${WAVELENGTH_OPTIONS[wavelengthIdx].label}`}
+          params={[
+            { key: 'λ', value: `${WAVELENGTH_OPTIONS[wavelengthIdx].value}nm` },
+            { key: 'θ分析', value: `${analyzerAngle.toFixed(1)}°` },
+            { key: '样品', value: sampleInserted ? (SAMPLE_PRESETS_EXT[selectedPreset]?.name || '自定义') : '未放入' },
+            { key: '温度', value: `${temperature}°C` },
+          ]}
+          targetRef={vizRef}
+          panelWidth={300}
+          label="撕下对比"
+        />
       </div>
 
       <div className="flex flex-1" style={{ minHeight: 0 }}>
         {/* ═══ Left: Visualization ═══ */}
-        <div className="flex-1 custom-scrollbar" style={{
-          display: "flex", flexDirection: "column", padding: "16px", overflowY: "auto",
+        <div ref={vizRef} className="flex-1 custom-scrollbar min-w-0" style={{
+          display: "flex", flexDirection: "column", padding: isMobile ? "12px 8px" : "16px", overflowY: "auto",
           alignItems: "center", gap: "12px",
         }}>
           {/* Optical Bench Canvas */}
@@ -1607,11 +1674,11 @@ export default function PolarimeterExperiment({ onBack }: { onBack: () => void }
           {measurementMode === "extinction" && (
             <div style={{ textAlign: "center" }}>
               <div style={{
-                display: "inline-flex", alignItems: "center", gap: "16px",
-                padding: "12px 20px", border: "1px solid #D0D0D0", borderRadius: "2px",
-                backgroundColor: "#FAFAFA",
+                display: "inline-flex", alignItems: "center", gap: isMobile ? "8px" : "16px",
+                padding: isMobile ? "8px 12px" : "12px 20px", border: "1px solid #D0D0D0", borderRadius: "2px",
+                backgroundColor: "#FAFAFA", maxWidth: '100%', flexWrap: 'wrap', justifyContent: 'center',
               }}>
-                <svg width="50" height="50" viewBox="0 0 50 50">
+                <svg width="50" height="50" viewBox="0 0 50 50" style={{ flexShrink: 0 }}>
                   <circle cx="25" cy="25" r="24" fill="#F0F3F6" stroke="#D0D0D0" strokeWidth="0.5" />
                   {intensity > 0.005 && (() => {
                     const r = 4 + 20 * intensity;
@@ -1653,7 +1720,7 @@ export default function PolarimeterExperiment({ onBack }: { onBack: () => void }
           )}
 
           {/* Hint text */}
-          <div style={{ fontSize: "10px", color: "#6b7280", textAlign: "center", maxWidth: "440px" }}>
+          <div style={{ fontSize: "10px", color: "#6b7280", textAlign: "center", maxWidth: isMobile ? "100%" : "440px", padding: isMobile ? "0 4px" : 0 }}>
             {hintText}
           </div>
 
@@ -1697,10 +1764,7 @@ export default function PolarimeterExperiment({ onBack }: { onBack: () => void }
         </div>
 
         {/* ═══ Right: Control Panel (w-80) ═══ */}
-        <div className="custom-scrollbar" style={{
-          width: "320px", flexShrink: 0, backgroundColor: "#FAFAFA",
-          borderLeft: "1px solid #D0D0D0", overflowY: "auto", padding: "12px",
-        }}>
+        <ControlPanel open={panelOpen} onClose={() => setPanelOpen(false)} title="旋光仪参数" desktopWidth="w-80" >
           {/* Experiment Mode Selection */}
           <div style={{ marginBottom: "12px" }}>
             <Label style={{ fontSize: "11px", fontWeight: 600, color: "#1A1A1A", marginBottom: "4px", display: "block" }}>
@@ -1865,25 +1929,103 @@ export default function PolarimeterExperiment({ onBack }: { onBack: () => void }
             </div>
           </div>
 
-          {/* Analyzer angle */}
+          {/* Analyzer angle — 刻度旋钮 + 滑块 */}
           <div style={{ marginBottom: "12px" }}>
-            <Label style={{ fontSize: "11px", fontWeight: 600, color: "#1A1A1A", marginBottom: "4px", display: "block" }}>
+            <Label style={{ fontSize: "11px", fontWeight: 600, color: "#1A1A1A", marginBottom: "6px", display: "block" }}>
               检偏器角度
             </Label>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <Slider value={[analyzerAngle]} min={0} max={360} step={0.1}
-                onValueChange={v => setAnalyzerAngle(v[0])} style={{ flex: 1 }} />
-              <span className="tabular-nums" style={{ fontSize: "10px", color: "#1A1A1A", minWidth: "36px" }}>
-                {analyzerAngle.toFixed(1)}°
-              </span>
-            </div>
-            <div style={{ display: "flex", gap: "4px", marginTop: "4px" }}>
-              <Input type="number" value={analyzerAngle.toFixed(1)}
-                onChange={e => setAnalyzerAngle(Number(e.target.value))}
-                style={{ fontSize: "10px", height: "24px", width: "70px" }} />
-              <span style={{ fontSize: "9px", color: "#888888", lineHeight: "24px" }}>° (0.1° 精度)</span>
+            <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+              <Knob
+                value={analyzerAngle}
+                min={0}
+                max={360}
+                step={0.1}
+                onChange={setAnalyzerAngle}
+                unit="°"
+                precision={1}
+                size={64}
+                detentValues={[0, 90, 180, 270, 360]}
+              />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <Slider value={[analyzerAngle]} min={0} max={360} step={0.1}
+                    onValueChange={v => setAnalyzerAngle(v[0])} style={{ flex: 1 }} />
+                  <span className="tabular-nums" style={{ fontSize: "10px", color: "#1A1A1A", minWidth: "36px" }}>
+                    {analyzerAngle.toFixed(1)}°
+                  </span>
+                </div>
+                <div style={{ display: "flex", gap: "4px", marginTop: "6px" }}>
+                  <Input type="number" value={analyzerAngle.toFixed(1)}
+                    onChange={e => setAnalyzerAngle(Number(e.target.value))}
+                    style={{ fontSize: "10px", height: "24px", width: "70px" }} />
+                  <span style={{ fontSize: "9px", color: "#888888", lineHeight: "24px" }}>° (0.1° 精度)</span>
+                </div>
+              </div>
             </div>
           </div>
+
+          {/* 实验操作核查清单 */}
+          {(experimentMode === "zero" || experimentMode === "halfshadow") && (() => {
+            const isHalf = experimentMode === "halfshadow"
+            const nearTarget = isHalf
+              ? fieldState === "balanced"
+              : intensity < 0.005
+            const steps: ChecklistStep[] = [
+              {
+                id: 'remove-sample',
+                label: '取下样品管，准备置零',
+                done: !sampleInserted,
+                required: true,
+              },
+              {
+                id: 'find-zero',
+                label: isHalf ? '调节检偏器至三视场亮度一致' : '调节检偏器至消光位（光强趋近 0）',
+                done: nearTarget && !sampleInserted,
+                required: true,
+                doneHint: nearTarget ? `当前光强 ${intensity.toFixed(4)}` : undefined,
+              },
+              {
+                id: 'record-zero',
+                label: '记录零位 φ₀',
+                done: zeroAngle !== null,
+                required: true,
+                doneHint: zeroAngle !== null ? `φ₀ = ${zeroAngle.toFixed(1)}°` : undefined,
+              },
+              {
+                id: 'load-sample',
+                label: '放入样品管',
+                done: sampleInserted && zeroAngle !== null,
+                required: true,
+              },
+              {
+                id: 'find-measure',
+                label: isHalf ? '再次调节至三视场亮度一致' : '再次调节至消光位',
+                done: nearTarget && sampleInserted && zeroAngle !== null,
+                required: true,
+                doneHint: nearTarget && sampleInserted ? `当前光强 ${intensity.toFixed(4)}` : undefined,
+              },
+              {
+                id: 'record-measure',
+                label: '记录测量值 θ',
+                done: measurementAngle !== null,
+                required: true,
+                doneHint: measurementAngle !== null ? `θ = ${measurementAngle.toFixed(1)}°` : undefined,
+              },
+              {
+                id: 'compute',
+                label: '计算旋光度 α = θ − φ₀',
+                done: zeroAngle !== null && measurementAngle !== null,
+                doneHint: zeroAngle !== null && measurementAngle !== null
+                  ? `α = ${(measurementAngle - zeroAngle).toFixed(1)}°`
+                  : undefined,
+              },
+            ]
+            return (
+              <div style={{ marginBottom: "12px" }}>
+                <ExperimentChecklist steps={steps} />
+              </div>
+            )
+          })()}
 
           {/* Measurement operations */}
           {(experimentMode === "zero" || experimentMode === "halfshadow" || experimentMode === "concentration") && (
@@ -2043,7 +2185,7 @@ export default function PolarimeterExperiment({ onBack }: { onBack: () => void }
           <div style={{ padding: "6px 10px", backgroundColor: phase === "complete" ? "#F0FFF0" : phase === "measuring" ? "#FFFFF0" : "#F0F3F6", borderRadius: "4px", fontSize: "10px", color: "#555555" }}>
             阶段: {phase === "zeroing" ? "确定零位" : phase === "loaded" ? "等待放入样品" : phase === "measuring" ? "测量中" : "测量完成"}
           </div>
-        </div>
+        </ControlPanel>
       </div>
     </div>
   );

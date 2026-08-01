@@ -3,13 +3,15 @@
 import { useState, useMemo } from 'react'
 import { Slider } from '@/components/ui/slider'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { useIsMobile } from '@/hooks/use-mobile'
+import { ControlPanel, MobilePanelToggle } from './shared/ControlPanel'
 
 /* ═══════════════════════════════════════════════
    PRISM SPECTROMETER (棱镜光谱仪)
    v2.1 · 几何光学模块 — 棱镜分光·色散曲线·光谱分析
    ═══════════════════════════════════════════════ */
 
-const FONT = 'var(--font-ibm-plex-sans), system-ui, sans-serif'
+const FONT = "system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif"
 
 // ─── Types ───
 type ExpMode = 'basic' | 'minDeviation' | 'spectral' | 'prismSystem'
@@ -361,7 +363,7 @@ function BasicDispersionMode({
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', width: '100%' }}>
       {/* Main SVG */}
       <svg width={SVG_W} height={SVG_H} viewBox={`0 0 ${SVG_W} ${SVG_H}`}
-        style={{ border: '1px solid #D0D0D0', backgroundColor: '#FFFFFF' }}>
+        style={{ border: '1px solid #D0D0D0', backgroundColor: '#FFFFFF', maxWidth: '100%', height: 'auto' }}>
 
         {/* Prism triangle */}
         <polygon
@@ -516,9 +518,10 @@ function BasicDispersionMode({
       </svg>
 
       {/* Spectrum Bar */}
-      <div style={{ width: SVG_W, border: '1px solid #D0D0D0', backgroundColor: '#FFFFFF', padding: '8px' }}>
+      <div style={{ width: '100%', maxWidth: SVG_W, border: '1px solid #D0D0D0', backgroundColor: '#FFFFFF', padding: '8px' }}>
         <div style={{ fontSize: '9px', color: '#888888', fontFamily: FONT, marginBottom: '4px' }}>色散光谱</div>
-        <svg width={SVG_W - 16} height="24" viewBox={`0 0 ${SVG_W - 16} 24`}>
+        <svg width={SVG_W - 16} height="24" viewBox={`0 0 ${SVG_W - 16} 24`}
+          style={{ maxWidth: '100%', height: 'auto' }}>
           {dispersionWavelengths.map((lam, idx) => {
             const x = ((lam - 380) / (700 - 380)) * (SVG_W - 16)
             const width = (SVG_W - 16) / dispersionWavelengths.length
@@ -637,7 +640,7 @@ function MinDeviationMode({
       <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', justifyContent: 'center' }}>
         {/* Deviation vs Incidence curve */}
         <svg width={curveW} height={curveH} viewBox={`0 0 ${curveW} ${curveH}`}
-          style={{ border: '1px solid #D0D0D0', backgroundColor: '#FFFFFF' }}>
+          style={{ border: '1px solid #D0D0D0', backgroundColor: '#FFFFFF', maxWidth: '100%', height: 'auto' }}>
           {/* Axes */}
           <line x1={padL} y1={padT} x2={padL} y2={curveH - padB} stroke="#333333" strokeWidth="0.8" />
           <line x1={padL} y1={curveH - padB} x2={curveW - padR} y2={curveH - padB} stroke="#333333" strokeWidth="0.8" />
@@ -699,7 +702,7 @@ function MinDeviationMode({
 
         {/* n(λ) curve */}
         <svg width={curveW} height={curveH} viewBox={`0 0 ${curveW} ${curveH}`}
-          style={{ border: '1px solid #D0D0D0', backgroundColor: '#FFFFFF' }}>
+          style={{ border: '1px solid #D0D0D0', backgroundColor: '#FFFFFF', maxWidth: '100%', height: 'auto' }}>
           {/* Axes */}
           <line x1={padL} y1={padT} x2={padL} y2={curveH - padB} stroke="#333333" strokeWidth="0.8" />
           <line x1={padL} y1={curveH - padB} x2={curveW - padR} y2={curveH - padB} stroke="#333333" strokeWidth="0.8" />
@@ -772,7 +775,7 @@ function MinDeviationMode({
       {/* Measurement info */}
       <div style={{
         padding: '10px 16px', border: '1px solid #E8ECF0', borderRadius: '2px',
-        backgroundColor: '#FAFAFA', width: SVG_W, fontSize: '10px',
+        backgroundColor: '#FAFAFA', width: '100%', maxWidth: SVG_W, fontSize: '10px',
         fontFamily: FONT, color: '#555555', lineHeight: '1.8',
       }}>
         <div className="tabular-nums">
@@ -845,7 +848,7 @@ function SpectralAnalysisMode({
 
       {/* Spectrometer eyepiece view */}
       <svg width={specW} height={specH} viewBox={`0 0 ${specW} ${specH}`}
-        style={{ border: '1px solid #D0D0D0', backgroundColor: '#1a1a2e' }}>
+        style={{ border: '1px solid #D0D0D0', backgroundColor: '#1a1a2e', maxWidth: '100%', height: 'auto' }}>
         {/* Crosshair */}
         <line x1={specW / 2} y1={0} x2={specW / 2} y2={specH}
           stroke="#333355" strokeWidth="0.5" strokeDasharray="4,4" />
@@ -886,7 +889,7 @@ function SpectralAnalysisMode({
 
       {/* Spectral line table */}
       <div style={{
-        width: SVG_W, border: '1px solid #D0D0D0', backgroundColor: '#FFFFFF',
+        width: '100%', maxWidth: SVG_W, border: '1px solid #D0D0D0', backgroundColor: '#FFFFFF',
         overflow: 'hidden',
       }}>
         <div style={{
@@ -901,7 +904,7 @@ function SpectralAnalysisMode({
           <div style={{ color: '#6b7280' }}>角色散</div>
           <div style={{ color: '#6b7280' }}>分辨率 R</div>
         </div>
-        <div style={{ maxHeight: '160px', overflowY: 'auto' }} className="custom-scrollbar">
+        <div style={{ maxHeight: '160px', overflowY: 'auto', overflowX: 'auto' }} className="custom-scrollbar mobile-x-scroll">
           {lineDeviations.map((line, idx) => {
             const dnDl = Math.abs(cauchyDnDlambda(line.wavelength, cauchyB, cauchyC)) * 1e3 // per nm
             const R = computeResolvingPower(baseLength, line.wavelength, cauchyB, cauchyC)
@@ -941,7 +944,7 @@ function SpectralAnalysisMode({
       {/* Element identification */}
       <div style={{
         padding: '8px 16px', border: '1px solid #E8ECF0', borderRadius: '2px',
-        backgroundColor: '#FAFAFA', width: SVG_W, fontSize: '10px',
+        backgroundColor: '#FAFAFA', width: '100%', maxWidth: SVG_W, fontSize: '10px',
         fontFamily: FONT, color: '#555555', lineHeight: '1.6',
       }}>
         <span style={{ fontWeight: 600, color: '#1A1A1A' }}>光源:</span>{' '}
@@ -1052,7 +1055,7 @@ function PrismSystemMode({
         <>
           {/* Amici prism SVG */}
           <svg width={prismSvgW} height={prismSvgH} viewBox={`0 0 ${prismSvgW} ${prismSvgH}`}
-            style={{ border: '1px solid #D0D0D0', backgroundColor: '#FFFFFF' }}>
+            style={{ border: '1px solid #D0D0D0', backgroundColor: '#FFFFFF', maxWidth: '100%', height: 'auto' }}>
             {/* Three prisms side by side */}
             {/* Crown 1 */}
             <polygon points="120,40 80,240 160,240" fill="#e0eef8" stroke="#333333" strokeWidth="1.2" />
@@ -1097,7 +1100,7 @@ function PrismSystemMode({
 
           {/* Amici data table */}
           <div style={{
-            width: SVG_W, border: '1px solid #D0D0D0', backgroundColor: '#FFFFFF',
+            width: '100%', maxWidth: SVG_W, border: '1px solid #D0D0D0', backgroundColor: '#FFFFFF',
           }}>
             <div style={{
               display: 'grid', gridTemplateColumns: '70px 80px 80px 80px 80px auto',
@@ -1139,7 +1142,7 @@ function PrismSystemMode({
         <>
           {/* Pellin-Broca prism SVG */}
           <svg width={prismSvgW} height={prismSvgH} viewBox={`0 0 ${prismSvgW} ${prismSvgH}`}
-            style={{ border: '1px solid #D0D0D0', backgroundColor: '#FFFFFF' }}>
+            style={{ border: '1px solid #D0D0D0', backgroundColor: '#FFFFFF', maxWidth: '100%', height: 'auto' }}>
             {/* Pellin-Broca prism shape (pentagon-ish) */}
             <polygon
               points="250,30 400,30 450,150 350,250 200,250 150,150"
@@ -1180,7 +1183,7 @@ function PrismSystemMode({
           {/* Pellin-Broca data */}
           <div style={{
             padding: '10px 16px', border: '1px solid #E8ECF0', borderRadius: '2px',
-            backgroundColor: '#FAFAFA', width: SVG_W, fontSize: '10px',
+            backgroundColor: '#FAFAFA', width: '100%', maxWidth: SVG_W, fontSize: '10px',
             fontFamily: FONT, color: '#555555', lineHeight: '1.8',
           }}>
             <div><span style={{ fontWeight: 600, color: '#1A1A1A' }}>Pellin-Broca 棱镜原理:</span> 在最小偏向角配置下，选定波长光线经90°反射后出射，其他波长偏离90°方向，实现单色光选择</div>
@@ -1203,6 +1206,10 @@ function PrismSystemMode({
 
 export default function PrismSpectrometer({ onBack }: { onBack: () => void }) {
   const [expMode, setExpMode] = useState<ExpMode>('basic')
+
+  // Mobile layout state
+  const isMobile = useIsMobile()
+  const [panelOpen, setPanelOpen] = useState(false)
 
   // Parameters
   const [material, setMaterial] = useState<Material>('BK7')
@@ -1233,11 +1240,13 @@ export default function PrismSpectrometer({ onBack }: { onBack: () => void }) {
   ]
 
   return (
-    <div className="min-h-screen flex flex-col" style={{ background: '#FFFFFF' }}>
-      {/* Header bar 48px */}
+    <div className="h-full flex flex-col" style={{ background: '#FFFFFF' }}>
+      {/* Header bar */}
       <div className="flex-shrink-0 flex items-center" style={{
-        height: '48px', backgroundColor: '#FFFFFF',
-        borderBottom: '1px solid #CCCCCC', paddingLeft: '24px', paddingRight: '24px',
+        height: isMobile ? '44px' : '48px', backgroundColor: '#FFFFFF',
+        borderBottom: '1px solid #CCCCCC',
+        paddingLeft: isMobile ? '16px' : '24px',
+        paddingRight: isMobile ? '12px' : '24px',
       }}>
         <button onClick={onBack} style={{
           fontFamily: FONT, fontSize: '12px', fontWeight: 400, color: '#555555',
@@ -1249,29 +1258,36 @@ export default function PrismSpectrometer({ onBack }: { onBack: () => void }) {
           ← 返回
         </button>
         <span style={{ margin: '0 12px', color: '#D0D0D0' }}>|</span>
-        <h1 style={{ fontFamily: FONT, fontSize: '20px', fontWeight: 600, color: '#1A1A1A', margin: 0 }}>
+        <h1 style={{
+          fontFamily: FONT, fontWeight: 600, color: '#1A1A1A', margin: 0,
+          fontSize: isMobile ? '17px' : '20px',
+        }}>
           棱镜光谱仪
         </h1>
+        <MobilePanelToggle onClick={() => setPanelOpen(true)} label="参数" />
       </div>
 
       <div className="flex flex-1" style={{ minHeight: 0 }}>
         {/* Left: Visualization */}
-        <div className="flex-1 dot-grid custom-scrollbar" style={{
-          display: 'flex', flexDirection: 'column', padding: '16px', overflowY: 'auto',
+        <div className="flex-1 min-w-0 dot-grid custom-scrollbar" style={{
+          display: 'flex', flexDirection: 'column',
+          padding: isMobile ? '12px' : '16px', overflowY: 'auto',
           alignItems: 'center',
         }}>
           {/* Mode tabs */}
           <div style={{
             display: 'flex', gap: '2px', marginBottom: '16px',
             borderBottom: '1px solid #E8ECF0', paddingBottom: '8px', width: '100%',
-            justifyContent: 'center',
-          }}>
+            justifyContent: isMobile ? 'flex-start' : 'center',
+            overflowX: isMobile ? 'auto' : 'visible',
+          }} className={isMobile ? 'mobile-x-scroll' : ''}>
             {modeTabs.map(([key, label]) => (
               <button key={key} onClick={() => setExpMode(key)} style={{
                 fontSize: '10px', padding: '4px 10px', borderRadius: '2px',
                 border: `1px solid ${expMode === key ? '#333333' : '#D0D0D0'}`,
                 backgroundColor: expMode === key ? '#F0F3F6' : '#FFFFFF',
                 color: '#1A1A1A', cursor: 'pointer', fontFamily: FONT,
+                whiteSpace: 'nowrap',
                 transition: 'border-color 200ms ease-out, background-color 200ms ease-out',
               }}>
                 {label}
@@ -1307,7 +1323,7 @@ export default function PrismSpectrometer({ onBack }: { onBack: () => void }) {
           <div style={{
             marginTop: '12px', padding: '8px 16px', border: '1px solid #E8ECF0',
             borderRadius: '2px', backgroundColor: '#FAFAFA', fontSize: '10px',
-            fontFamily: FONT, color: '#555555', lineHeight: '1.8', width: SVG_W,
+            fontFamily: FONT, color: '#555555', lineHeight: '1.8', width: '100%', maxWidth: SVG_W,
           }}>
             {expMode === 'basic' && (
               <>
@@ -1340,10 +1356,12 @@ export default function PrismSpectrometer({ onBack }: { onBack: () => void }) {
         </div>
 
         {/* Right: Control Panel w-72 */}
-        <div className="custom-scrollbar" style={{
-          width: '288px', flexShrink: 0, backgroundColor: '#f8f9fb',
-          borderLeft: '1px solid #D0D0D0', overflowY: 'auto', padding: '16px',
-        }}>
+        <ControlPanel
+          open={panelOpen}
+          onClose={() => setPanelOpen(false)}
+          title="棱镜光谱仪参数"
+          desktopWidth="w-72"
+        >
 
           {/* Material */}
           <SectionTitle>棱镜材料</SectionTitle>
@@ -1497,22 +1515,29 @@ export default function PrismSpectrometer({ onBack }: { onBack: () => void }) {
               </div>
             ))}
           </div>
-        </div>
+        </ControlPanel>
       </div>
 
       {/* Status bar 24px */}
       <div className="flex-shrink-0" style={{
         height: '24px', backgroundColor: '#FFFFFF',
-        borderTop: '1px solid #CCCCCC', paddingLeft: '24px', paddingRight: '24px',
+        borderTop: '1px solid #CCCCCC',
+        paddingLeft: isMobile ? '16px' : '24px',
+        paddingRight: isMobile ? '16px' : '24px',
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
       }}>
-        <span style={{
-          fontSize: '9px', color: '#888888', fontFamily: FONT, className: 'tabular-nums',
+        <span className="tabular-nums" style={{
+          fontSize: '9px', color: '#888888', fontFamily: FONT,
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          flex: isMobile ? '1 1 auto' : '0 0 auto',
+          minWidth: 0,
         }}>
           v2.1 · 几何光学模块 — 棱镜分光·色散曲线·光谱分析
         </span>
         <span className="tabular-nums" style={{
           fontSize: '9px', color: '#888888', fontFamily: FONT,
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          flex: '0 0 auto',
         }}>
           {material === 'custom' ? `自定义` : material} · n={refN.toFixed(3)} · A={apexAngle}° · i={incAngle}°
         </span>

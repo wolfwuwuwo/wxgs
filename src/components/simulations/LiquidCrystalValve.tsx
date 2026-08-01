@@ -1,12 +1,14 @@
 'use client'
 
 import { useState, useMemo, useRef, useEffect } from 'react'
+import { useIsMobile } from '@/hooks/use-mobile'
+import { ControlPanel, MobilePanelToggle } from './shared/ControlPanel'
 
 /* ═══════════════════════════════════════════════
    PHYSICS ENGINE: Oseen-Frank + Berreman 4×4
    ═══════════════════════════════════════════════ */
 
-const FONT = 'var(--font-ibm-plex-sans), system-ui, sans-serif'
+const FONT = "system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif"
 const EPS0 = 8.854e-12 // F/m
 
 // ─── LC Material Parameters (5CB-like nematic) ───
@@ -450,6 +452,10 @@ type ExperimentMode = 'basic' | 'response' | 'viewangle' | 'comparison' | 'grays
 type PolConfig = 'normallyWhite' | 'normallyBlack'
 
 export default function LiquidCrystalValve({ onBack }: { onBack: () => void }) {
+  /* ── Mobile panel state ─────────────────────────────────── */
+  const isMobile = useIsMobile()
+  const [panelOpen, setPanelOpen] = useState(false)
+
   const [voltage, setVoltage] = useState(0)
   const [lcMode, setLcMode] = useState<LCMode>('TN')
   const [polConfig, setPolConfig] = useState<PolConfig>('normallyWhite')
@@ -619,38 +625,42 @@ export default function LiquidCrystalValve({ onBack }: { onBack: () => void }) {
   }
 
   return (
-    <div className="min-h-screen flex flex-col" style={{ background: '#FFFFFF' }}>
+    <div className="h-full flex flex-col" style={{ background: '#FFFFFF' }}>
       {/* Header */}
       <div className="flex-shrink-0 flex items-center" style={{
-        height: '48px', backgroundColor: '#FFFFFF',
-        borderBottom: '1px solid #CCCCCC', paddingLeft: '24px', paddingRight: '24px',
+        height: isMobile ? '44px' : '48px', backgroundColor: '#FFFFFF',
+        borderBottom: '1px solid #CCCCCC', paddingLeft: isMobile ? '16px' : '24px', paddingRight: isMobile ? '16px' : '24px',
       }}>
         <button onClick={onBack} style={{
           fontFamily: FONT, fontSize: '12px', fontWeight: 400, color: '#555555',
           background: 'none', border: 'none', cursor: 'pointer',
           display: 'flex', alignItems: 'center', gap: '4px',
           transition: 'color 200ms ease-out',
+          minHeight: '36px',
         }} onMouseEnter={e => (e.currentTarget.style.color = '#1A1A1A')}
            onMouseLeave={e => (e.currentTarget.style.color = '#555555')}>
           ← 返回
         </button>
-        <span style={{ margin: '0 12px', color: '#D0D0D0' }}>|</span>
-        <h1 style={{ fontFamily: FONT, fontSize: '20px', fontWeight: 600, color: '#1A1A1A', margin: 0 }}>
+        <span style={{ margin: '0 8px', color: '#D0D0D0' }}>|</span>
+        <h1 style={{ fontFamily: FONT, fontSize: isMobile ? '17px' : '20px', fontWeight: 600, color: '#1A1A1A', margin: 0 }}>
           液晶旋光光阀实验台
         </h1>
-        <span style={{
-          marginLeft: '8px', fontSize: '8px', fontWeight: 400, color: '#888888',
-          fontFamily: FONT, padding: '1px 5px',
-          border: '1px solid #D0D0D0', borderRadius: '2px',
-        }}>
-          Oseen-Frank + Berreman 4×4
-        </span>
+        {!isMobile && (
+          <span style={{
+            marginLeft: '8px', fontSize: '8px', fontWeight: 400, color: '#888888',
+            fontFamily: FONT, padding: '1px 5px',
+            border: '1px solid #D0D0D0', borderRadius: '2px',
+          }}>
+            Oseen-Frank + Berreman 4×4
+          </span>
+        )}
+        <MobilePanelToggle onClick={() => setPanelOpen(true)} label="参数" />
       </div>
 
       <div className="flex flex-1" style={{ minHeight: 0 }}>
         {/* Left: Visualization Area */}
-        <div className="flex-1 dot-grid custom-scrollbar" style={{
-          display: 'flex', flexDirection: 'column', padding: '16px', overflowY: 'auto',
+        <div className="flex-1 min-w-0 dot-grid custom-scrollbar" style={{
+          display: 'flex', flexDirection: 'column', padding: isMobile ? '12px' : '16px', overflowY: 'auto',
           alignItems: 'center',
         }}>
 
@@ -658,7 +668,7 @@ export default function LiquidCrystalValve({ onBack }: { onBack: () => void }) {
           <div style={{
             display: 'flex', gap: '2px', marginBottom: '16px',
             borderBottom: '1px solid #E8ECF0', paddingBottom: '8px', width: '100%',
-            justifyContent: 'center',
+            justifyContent: 'center', flexWrap: 'wrap',
           }}>
             {([
               ['basic', '基本TN模式'],
@@ -695,7 +705,7 @@ export default function LiquidCrystalValve({ onBack }: { onBack: () => void }) {
               />
 
               {/* Intensity readout */}
-              <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start', marginBottom: '16px', marginTop: '12px' }}>
+              <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start', marginBottom: '16px', marginTop: '12px', flexWrap: 'wrap', justifyContent: 'center' }}>
                 <IntensityReadout intensity={intensity} />
                 {showRGB && rgbIntensities && <RGBReadout rgb={rgbIntensities} />}
               </div>
@@ -753,10 +763,7 @@ export default function LiquidCrystalValve({ onBack }: { onBack: () => void }) {
         </div>
 
         {/* Right: Control Panel */}
-        <div className="custom-scrollbar" style={{
-          width: '280px', flexShrink: 0, backgroundColor: '#FAFAFA',
-          borderLeft: '1px solid #D0D0D0', overflowY: 'auto', padding: '16px',
-        }}>
+        <ControlPanel open={panelOpen} onClose={() => setPanelOpen(false)} title="实验参数" desktopWidth="w-72">
           {/* Voltage control */}
           <SectionTitle>驱动电压</SectionTitle>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
@@ -878,16 +885,21 @@ export default function LiquidCrystalValve({ onBack }: { onBack: () => void }) {
             <div>• 加压后分子沿电场方向竖起</div>
             <div>• 旋光能力随电压增大而消失</div>
           </div>
-        </div>
+        </ControlPanel>
       </div>
 
       {/* Footer */}
       <div className="flex-shrink-0 flex items-center mt-auto" style={{
         height: '24px', backgroundColor: '#FFFFFF',
-        borderTop: '1px solid #CCCCCC', paddingLeft: '24px',
+        borderTop: '1px solid #CCCCCC', paddingLeft: isMobile ? '16px' : '24px', paddingRight: isMobile ? '16px' : '24px',
       }}>
-        <span className="tabular-nums" style={{ fontFamily: FONT, fontSize: '10px', color: '#888888' }}>
-          v2.0 · Oseen-Frank弹性理论 + Berreman 4×4矩阵法
+        <span className="tabular-nums" style={{
+          fontFamily: FONT, fontSize: isMobile ? '9px' : '10px', color: '#888888',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>
+          {isMobile
+            ? 'v2.0 · 液晶旋光光阀'
+            : 'v2.0 · Oseen-Frank弹性理论 + Berreman 4×4矩阵法'}
         </span>
       </div>
     </div>
@@ -956,7 +968,7 @@ function InstrumentSVG({
   }, [tiltProfile, twistAngle, N])
 
   return (
-    <svg width="720" height="200" viewBox="0 0 720 200" style={{ marginBottom: '8px' }}>
+    <svg width="720" height="200" viewBox="0 0 720 200" style={{ marginBottom: '8px', maxWidth: '100%', height: 'auto' }}>
       {/* Optical axis */}
       <line x1="20" y1="100" x2="700" y2="100" stroke="#888888" strokeWidth="0.6" strokeDasharray="6,3,2,3" />
 
@@ -1166,7 +1178,7 @@ function TVCurvePlot({ data, voltage, intensity }: {
       <div style={{ fontSize: '12px', fontWeight: 600, color: '#1A1A1A', fontFamily: FONT, marginBottom: '6px' }}>
         T-V 特性曲线
       </div>
-      <svg width={w} height={h} style={{ border: '1px solid #D0D0D0', backgroundColor: '#FFFFFF' }}>
+      <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ border: '1px solid #D0D0D0', backgroundColor: '#FFFFFF', maxWidth: '100%', height: 'auto' }}>
         {/* Grid */}
         {[0.25, 0.5, 0.75].map(f => (
           <g key={f}>
@@ -1229,7 +1241,7 @@ function DirectorProfilePlot({ tiltProfile }: { tiltProfile: number[] }) {
       <div style={{ fontSize: '12px', fontWeight: 600, color: '#1A1A1A', fontFamily: FONT, marginBottom: '6px' }}>
         指向矢分布 θ(z)
       </div>
-      <svg width={w} height={h} style={{ border: '1px solid #D0D0D0', backgroundColor: '#FFFFFF' }}>
+      <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ border: '1px solid #D0D0D0', backgroundColor: '#FFFFFF', maxWidth: '100%', height: 'auto' }}>
         {/* Grid */}
         {[0.25, 0.5, 0.75].map(f => (
           <g key={f}>
@@ -1314,7 +1326,7 @@ function ResponseTimePanel({
         响应时间测量
       </div>
 
-      <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', justifyContent: 'center' }}>
+      <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', justifyContent: 'center', flexWrap: 'wrap', alignItems: 'flex-start' }}>
         <div style={{
           padding: '8px 12px', border: '1px solid #D0D0D0', borderRadius: '2px',
           backgroundColor: '#FAFAFA', textAlign: 'center',
@@ -1355,7 +1367,7 @@ function ResponseTimePanel({
       </div>
 
       {/* Transient response plot */}
-      <svg width={w} height={h} style={{ border: '1px solid #D0D0D0', backgroundColor: '#FFFFFF' }}>
+      <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ border: '1px solid #D0D0D0', backgroundColor: '#FFFFFF', maxWidth: '100%', height: 'auto' }}>
         {/* Grid */}
         {[0.25, 0.5, 0.75].map(f => (
           <line key={f} x1={pad} y1={pad + (h - pad * 2) * f} x2={w - pad} y2={pad + (h - pad * 2) * f}
@@ -1461,7 +1473,7 @@ function ViewAnglePanel({
           </div>
 
           {/* Incident ray diagram */}
-          <svg width="200" height="120" viewBox="0 0 200 120" style={{ border: '1px solid #D0D0D0', backgroundColor: '#FFFFFF' }}>
+          <svg width="200" height="120" viewBox="0 0 200 120" style={{ border: '1px solid #D0D0D0', backgroundColor: '#FFFFFF', maxWidth: '100%', height: 'auto' }}>
             {/* LC cell surface */}
             <rect x="60" y="30" width="80" height="60" fill="none" stroke="#333333" strokeWidth="1" />
             <text x="100" y="105" textAnchor="middle" fontSize="7" fill="#888888" fontFamily={FONT}>液晶盒</text>
@@ -1509,7 +1521,7 @@ function ViewAnglePanel({
           <div style={{ fontSize: '10px', fontWeight: 600, color: '#1A1A1A', fontFamily: FONT, marginBottom: '6px', textAlign: 'center' }}>
             T-V曲线 @ θᵢ={incidenceAngle}°, φ={azimuthAngle}°
           </div>
-          <svg width={w} height={h} style={{ border: '1px solid #D0D0D0', backgroundColor: '#FFFFFF' }}>
+          <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ border: '1px solid #D0D0D0', backgroundColor: '#FFFFFF', maxWidth: '100%', height: 'auto' }}>
             {/* Grid */}
             {[0.25, 0.5, 0.75].map(f => (
               <g key={f}>
@@ -1559,7 +1571,7 @@ function ComparisonPanel({
       </div>
 
       {/* Comparison T-V curves */}
-      <svg width={w} height={h} style={{ border: '1px solid #D0D0D0', backgroundColor: '#FFFFFF' }}>
+      <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ border: '1px solid #D0D0D0', backgroundColor: '#FFFFFF', maxWidth: '100%', height: 'auto' }}>
         {[0.25, 0.5, 0.75].map(f => (
           <g key={f}>
             <line x1={pad} y1={pad + (h - pad * 2) * f} x2={w - pad} y2={pad + (h - pad * 2) * f}

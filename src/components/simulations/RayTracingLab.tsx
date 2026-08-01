@@ -1,12 +1,14 @@
 'use client'
 
 import { useState, useMemo } from 'react'
+import { useIsMobile } from '@/hooks/use-mobile'
+import { ControlPanel, MobilePanelToggle } from './shared/ControlPanel'
 
 /* ═══════════════════════════════════════════════
    GEOMETRIC OPTICS RAY TRACING LAB
    ═══════════════════════════════════════════════ */
 
-const FONT = 'var(--font-ibm-plex-sans), system-ui, sans-serif'
+const FONT = "system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif"
 
 type OpticsElement = 'convex' | 'concave' | 'convexMirror' | 'concaveMirror'
 type ExpMode = 'thinLens' | 'dualLens' | 'mirror' | 'prism'
@@ -126,6 +128,8 @@ function computeMinDeviation(apexAngle: number, n: number): number {
    ═══════════════════════════════════════════════ */
 
 export default function RayTracingLab({ onBack }: { onBack: () => void }) {
+  const isMobile = useIsMobile()
+  const [panelOpen, setPanelOpen] = useState(false)
   const [expMode, setExpMode] = useState<ExpMode>('thinLens')
 
   // Thin lens params
@@ -341,11 +345,11 @@ export default function RayTracingLab({ onBack }: { onBack: () => void }) {
   const imgTipY = !imageResult.atInfinity ? mmToY(imageResult.imageHeight) : 0
 
   return (
-    <div className="min-h-screen flex flex-col" style={{ background: '#FFFFFF' }}>
+    <div className="h-full flex flex-col" style={{ background: '#FFFFFF' }}>
       {/* Header */}
       <div className="flex-shrink-0 flex items-center" style={{
-        height: '48px', backgroundColor: '#FFFFFF',
-        borderBottom: '1px solid #CCCCCC', paddingLeft: '24px', paddingRight: '24px',
+        height: isMobile ? '44px' : '48px', backgroundColor: '#FFFFFF',
+        borderBottom: '1px solid #CCCCCC', paddingLeft: isMobile ? '16px' : '24px', paddingRight: isMobile ? '16px' : '24px',
       }}>
         <button onClick={onBack} style={{
           fontFamily: FONT, fontSize: '12px', fontWeight: 400, color: '#555555',
@@ -357,22 +361,23 @@ export default function RayTracingLab({ onBack }: { onBack: () => void }) {
           ← 返回
         </button>
         <span style={{ margin: '0 12px', color: '#D0D0D0' }}>|</span>
-        <h1 style={{ fontFamily: FONT, fontSize: '20px', fontWeight: 600, color: '#1A1A1A', margin: 0 }}>
+        <h1 style={{ fontFamily: FONT, fontSize: isMobile ? '17px' : '20px', fontWeight: 600, color: '#1A1A1A', margin: 0 }}>
           光线追迹与透镜成像
         </h1>
+        <MobilePanelToggle onClick={() => setPanelOpen(true)} label="参数" />
       </div>
 
       <div className="flex flex-1" style={{ minHeight: 0 }}>
         {/* Left: Visualization */}
-        <div className="flex-1 dot-grid custom-scrollbar" style={{
-          display: 'flex', flexDirection: 'column', padding: '16px', overflowY: 'auto',
+        <div className="flex-1 dot-grid custom-scrollbar min-w-0" style={{
+          display: 'flex', flexDirection: 'column', padding: isMobile ? '12px 8px' : '16px', overflowY: 'auto',
           alignItems: 'center',
         }}>
           {/* Mode tabs */}
           <div style={{
             display: 'flex', gap: '2px', marginBottom: '16px',
             borderBottom: '1px solid #E8ECF0', paddingBottom: '8px', width: '100%',
-            justifyContent: 'center',
+            justifyContent: 'center', flexWrap: 'wrap',
           }}>
             {([
               ['thinLens', '薄透镜成像'],
@@ -395,7 +400,7 @@ export default function RayTracingLab({ onBack }: { onBack: () => void }) {
           {/* ─── Thin Lens SVG ─── */}
           {(expMode === 'thinLens' || expMode === 'mirror') && (
             <svg width={SVG_W} height={SVG_H} viewBox={`0 0 ${SVG_W} ${SVG_H}`}
-              style={{ border: '1px solid #D0D0D0', backgroundColor: '#FFFFFF' }}>
+              style={{ border: '1px solid #D0D0D0', backgroundColor: '#FFFFFF', maxWidth: '100%', height: 'auto' }}>
               {/* Optical axis */}
               <line x1="0" y1={AXIS_Y} x2={SVG_W} y2={AXIS_Y}
                 stroke="#888888" strokeWidth="0.6" strokeDasharray="8,3,2,3" />
@@ -556,7 +561,7 @@ export default function RayTracingLab({ onBack }: { onBack: () => void }) {
           {/* ─── Dual Lens SVG ─── */}
           {expMode === 'dualLens' && dualLensResult && (
             <svg width={SVG_W} height={SVG_H} viewBox={`0 0 ${SVG_W} ${SVG_H}`}
-              style={{ border: '1px solid #D0D0D0', backgroundColor: '#FFFFFF' }}>
+              style={{ border: '1px solid #D0D0D0', backgroundColor: '#FFFFFF', maxWidth: '100%', height: 'auto' }}>
               <line x1="0" y1={AXIS_Y} x2={SVG_W} y2={AXIS_Y}
                 stroke="#888888" strokeWidth="0.6" strokeDasharray="8,3,2,3" />
 
@@ -660,7 +665,7 @@ export default function RayTracingLab({ onBack }: { onBack: () => void }) {
 
             return (
               <svg width={SVG_W} height={SVG_H} viewBox={`0 0 ${SVG_W} ${SVG_H}`}
-                style={{ border: '1px solid #D0D0D0', backgroundColor: '#FFFFFF' }}>
+                style={{ border: '1px solid #D0D0D0', backgroundColor: '#FFFFFF', maxWidth: '100%', height: 'auto' }}>
                 {/* Prism triangle */}
                 <polygon
                   points={`${cx},${topY} ${leftX},${bottomY} ${rightX},${bottomY}`}
@@ -768,7 +773,7 @@ export default function RayTracingLab({ onBack }: { onBack: () => void }) {
           })()}
 
           {/* ─── Readout Panel ─── */}
-          <div style={{ display: 'flex', gap: '16px', marginTop: '16px', flexWrap: 'wrap', justifyContent: 'center' }}>
+          <div className="mobile-x-scroll" style={{ display: 'flex', gap: isMobile ? '8px' : '16px', marginTop: '16px', flexWrap: 'wrap', justifyContent: 'center', maxWidth: '100%', overflowX: 'auto' }}>
             {expMode !== 'prism' ? (
               <>
                 <ReadoutBox label="物距 u" value={`${objDist} mm`} color="#CC0000" />
@@ -792,9 +797,9 @@ export default function RayTracingLab({ onBack }: { onBack: () => void }) {
 
           {/* Formula card */}
           <div style={{
-            marginTop: '12px', padding: '8px 16px', border: '1px solid #E8ECF0',
+            marginTop: '12px', padding: isMobile ? '8px 12px' : '8px 16px', border: '1px solid #E8ECF0',
             borderRadius: '2px', backgroundColor: '#FAFAFA', fontSize: '10px',
-            fontFamily: FONT, color: '#555555', lineHeight: '1.8',
+            fontFamily: FONT, color: '#555555', lineHeight: '1.8', maxWidth: '100%', overflowX: 'auto',
           }}>
             {expMode === 'thinLens' && (
               <>
@@ -827,10 +832,7 @@ export default function RayTracingLab({ onBack }: { onBack: () => void }) {
         </div>
 
         {/* Right: Control Panel */}
-        <div className="custom-scrollbar" style={{
-          width: '280px', flexShrink: 0, backgroundColor: '#FAFAFA',
-          borderLeft: '1px solid #D0D0D0', overflowY: 'auto', padding: '16px',
-        }}>
+        <ControlPanel open={panelOpen} onClose={() => setPanelOpen(false)} title="光路参数" desktopWidth="w-72">
           {/* Object Distance */}
           <SectionTitle>物距</SectionTitle>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
@@ -1056,16 +1058,16 @@ export default function RayTracingLab({ onBack }: { onBack: () => void }) {
               </>
             )}
           </div>
-        </div>
+        </ControlPanel>
       </div>
 
       {/* Footer */}
       <div className="flex-shrink-0 flex items-center mt-auto" style={{
         height: '24px', backgroundColor: '#FFFFFF',
-        borderTop: '1px solid #CCCCCC', paddingLeft: '24px',
+        borderTop: '1px solid #CCCCCC', paddingLeft: isMobile ? '16px' : '24px', paddingRight: isMobile ? '16px' : '24px',
       }}>
-        <span className="tabular-nums" style={{ fontFamily: FONT, fontSize: '10px', color: '#888888' }}>
-          v1.0 · 几何光学 · 薄透镜成像 · 球面镜 · 棱镜分光
+        <span className="tabular-nums" style={{ fontFamily: FONT, fontSize: isMobile ? '9px' : '10px', color: '#888888', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {isMobile ? 'v1.0 · 几何光学' : 'v1.0 · 几何光学 · 薄透镜成像 · 球面镜 · 棱镜分光'}
         </span>
       </div>
     </div>

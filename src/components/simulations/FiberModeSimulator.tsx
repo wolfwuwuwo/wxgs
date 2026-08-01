@@ -13,6 +13,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { ControlPanel, MobilePanelToggle } from "./shared/ControlPanel";
+import { blitImageData } from "@/lib/utils";
 
 /* ═══════════════════════════════════════════════════════════════
    BESSEL FUNCTIONS — Numerical Implementations
@@ -512,8 +515,8 @@ function ModeFieldCanvas({ l, u, w, wavelength, size = 200 }: {
     const intensities = new Float64Array(size * size);
     for (let py = 0; py < size; py++) {
       for (let px = 0; px < size; px++) {
-        const x = (px / size - 0.5) * 2 * extent;
-        const y = (py / size - 0.5) * 2 * extent;
+        const x = ((px + 0.5) / size - 0.5) * 2 * extent;
+        const y = ((py + 0.5) / size - 0.5) * 2 * extent;
         const r = Math.sqrt(x * x + y * y);
         const phi = Math.atan2(y, x);
         const R = computeModeField(r, cl, cu, cw);
@@ -542,7 +545,7 @@ function ModeFieldCanvas({ l, u, w, wavelength, size = 200 }: {
       imageData.data[idx + 3] = 255;
     }
 
-    ctx.putImageData(imageData, 0, 0);
+    blitImageData(ctx, imageData, size, size);
 
     // Draw core boundary circle
     ctx.strokeStyle = "#333333";
@@ -594,17 +597,17 @@ function FiberCrossSectionSVG({ a, n1, n2, l, m, u, w, color }: {
   const rMode = isFinite(modeExtent) ? Math.min(rCore * 2, modeExtent) : rCore;
 
   return (
-    <svg width="200" height="200" viewBox="0 0 200 200">
+    <svg width="200" height="200" viewBox="0 0 200 200" className="svg-responsive" style={{ maxWidth: "100%" }}>
       {/* Cladding */}
       <circle cx={cx} cy={cy} r={rClad} fill="none" stroke="#333333" strokeWidth="1.5" />
       <text x={cx} y={cy - rClad + 12} textAnchor="middle" fontSize="8" fill="#888888"
-        fontFamily="var(--font-ibm-plex-sans), system-ui, sans-serif">
+        fontFamily="system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif">
         n₂={n2.toFixed(4)}
       </text>
       {/* Core */}
       <circle cx={cx} cy={cy} r={rCore} fill={color} fillOpacity="0.08" stroke="#333333" strokeWidth="1" />
       <text x={cx} y={cy + 4} textAnchor="middle" fontSize="8" fill="#333333"
-        fontFamily="var(--font-ibm-plex-sans), system-ui, sans-serif">
+        fontFamily="system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif">
         n₁={n1.toFixed(4)}
       </text>
       {/* Mode field extent */}
@@ -613,12 +616,12 @@ function FiberCrossSectionSVG({ a, n1, n2, l, m, u, w, color }: {
       {/* Core radius label */}
       <line x1={cx} y1={cy} x2={cx + rCore} y2={cy} stroke="#333333" strokeWidth="0.5" />
       <text x={cx + rCore / 2} y={cy - 4} textAnchor="middle" fontSize="7" fill="#555555"
-        fontFamily="var(--font-ibm-plex-sans), system-ui, sans-serif">
+        fontFamily="system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif">
         a={a}μm
       </text>
       {/* LP mode label */}
       <text x={cx} y={cy + rClad + 14} textAnchor="middle" fontSize="9" fill="#333333"
-        fontFamily="var(--font-ibm-plex-sans), system-ui, sans-serif" fontWeight="600">
+        fontFamily="system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif" fontWeight="600">
         LP{toSubscript(l)}{toSubscript(m)}
       </text>
     </svg>
@@ -669,7 +672,7 @@ function FiberSideViewSVG({ n1, n2, a, NA, wavelength, color }: {
   const arcR = 20;
 
   return (
-    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`}>
+    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="svg-responsive" style={{ maxWidth: "100%" }}>
       {/* Cladding fill */}
       <rect x="0" y={cladY1} width={W} height={cladY2 - cladY1}
         fill="#f0f3f6" stroke="none" />
@@ -688,11 +691,11 @@ function FiberSideViewSVG({ n1, n2, a, NA, wavelength, color }: {
 
       {/* Labels: n₁ and n₂ */}
       <text x={W - 5} y={coreCenter + 3} textAnchor="end" fontSize="9" fill="#333333" fontWeight="600"
-        fontFamily="var(--font-ibm-plex-sans), system-ui, sans-serif">n₁</text>
+        fontFamily="system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif">n₁</text>
       <text x={W - 5} y={cladY1 + 10} textAnchor="end" fontSize="8" fill="#888888"
-        fontFamily="var(--font-ibm-plex-sans), system-ui, sans-serif">n₂</text>
+        fontFamily="system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif">n₂</text>
       <text x={W - 5} y={cladY2 - 4} textAnchor="end" fontSize="8" fill="#888888"
-        fontFamily="var(--font-ibm-plex-sans), system-ui, sans-serif">n₂</text>
+        fontFamily="system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif">n₂</text>
 
       {/* Critical angle arc */}
       {arcCx < W - 30 && (
@@ -702,7 +705,7 @@ function FiberSideViewSVG({ n1, n2, a, NA, wavelength, color }: {
             fill="none" stroke="#888888" strokeWidth="0.8"
           />
           <text x={arcCx + arcR + 2} y={arcCy + 10} fontSize="7" fill="#888888"
-            fontFamily="var(--font-ibm-plex-sans), system-ui, sans-serif">
+            fontFamily="system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif">
             θc={thetaCDeg.toFixed(1)}°
           </text>
         </>
@@ -712,7 +715,7 @@ function FiberSideViewSVG({ n1, n2, a, NA, wavelength, color }: {
       <line x1="10" y1={coreCenter} x2={W - 10} y2={coreCenter}
         stroke="#cccccc" strokeWidth="0.5" strokeDasharray="2,4" />
       <text x={W / 2} y={H - 2} textAnchor="middle" fontSize="7" fill="#6b7280"
-        fontFamily="var(--font-ibm-plex-sans), system-ui, sans-serif">
+        fontFamily="system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif">
         光纤侧视图 · 全内反射
       </text>
     </svg>
@@ -810,28 +813,34 @@ function DispersionCurveSVG({ coreRadius, n1, n2, wavelength }: FiberParams) {
   const safeCx = isFinite(currentX) ? currentX : pad.l;
   const safeCy = isFinite(currentY) ? currentY : pad.t + plotH / 2;
 
+  // Final NaN fallbacks for cx/cy to satisfy type-checkers and React DOM (mobile-safe)
+  const finalCx = Number.isFinite(safeCx) ? safeCx : pad.l;
+  const finalCy = Number.isFinite(safeCy) ? safeCy : pad.t + plotH / 2;
+  const finalN1Y = Number.isFinite(toY(n1)) ? toY(n1) : pad.t + plotH / 2;
+  const finalN2Y = Number.isFinite(toY(n2)) ? toY(n2) : pad.t + plotH / 2;
+
   return (
-    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`}>
+    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="svg-responsive" style={{ maxWidth: "100%" }}>
       {/* Axes */}
       <line x1={pad.l} y1={pad.t} x2={pad.l} y2={pad.t + plotH} stroke="#333333" strokeWidth="1" />
       <line x1={pad.l} y1={pad.t + plotH} x2={pad.l + plotW} y2={pad.t + plotH} stroke="#333333" strokeWidth="1" />
       {/* Axis labels */}
       <text x={pad.l + plotW / 2} y={H - 2} textAnchor="middle" fontSize="8" fill="#6b7280"
-        fontFamily="var(--font-ibm-plex-sans), system-ui, sans-serif">λ (nm)</text>
+        fontFamily="system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif">λ (nm)</text>
       <text x={4} y={pad.t + plotH / 2} textAnchor="middle" fontSize="8" fill="#6b7280"
-        fontFamily="var(--font-ibm-plex-sans), system-ui, sans-serif"
+        fontFamily="system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif"
         transform={`rotate(-90,4,${pad.t + plotH / 2})`}>n_eff</text>
       {/* n1 and n2 reference lines */}
-      <line x1={pad.l} y1={toY(n1)} x2={pad.l + plotW} y2={toY(n1)}
+      <line x1={pad.l} y1={finalN1Y} x2={pad.l + plotW} y2={finalN1Y}
         stroke="#cccccc" strokeWidth="0.5" strokeDasharray="3,3" />
-      <text x={pad.l - 3} y={toY(n1) + 3} textAnchor="end" fontSize="7" fill="#888888">n₁</text>
-      <line x1={pad.l} y1={toY(n2)} x2={pad.l + plotW} y2={toY(n2)}
+      <text x={pad.l - 3} y={finalN1Y + 3} textAnchor="end" fontSize="7" fill="#888888">n₁</text>
+      <line x1={pad.l} y1={finalN2Y} x2={pad.l + plotW} y2={finalN2Y}
         stroke="#cccccc" strokeWidth="0.5" strokeDasharray="3,3" />
-      <text x={pad.l - 3} y={toY(n2) + 3} textAnchor="end" fontSize="7" fill="#888888">n₂</text>
+      <text x={pad.l - 3} y={finalN2Y + 3} textAnchor="end" fontSize="7" fill="#888888">n₂</text>
       {/* Curve */}
       {pathD && <path d={pathD} fill="none" stroke="#CC0000" strokeWidth="1.5" />}
       {/* Current wavelength marker */}
-      <circle cx={safeCx} cy={safeCy} r="3" fill="#CC0000" stroke="#FFFFFF" strokeWidth="1" />
+      <circle cx={finalCx} cy={finalCy} r="3" fill="#CC0000" stroke="#FFFFFF" strokeWidth="1" />
     </svg>
   );
 }
@@ -869,7 +878,7 @@ function CouplingDiagramSVG({ offset, tilt, color, mfdRadius }: {
   gaussPoints.push('Z');
 
   return (
-    <svg width="280" height="160" viewBox="0 0 280 160">
+    <svg width="280" height="160" viewBox="0 0 280 160" className="svg-responsive" style={{ maxWidth: "100%" }}>
       {/* Fiber end face (circle) — cladding */}
       <ellipse cx={fiberCx} cy={fiberCy} rx="40" ry="40" fill="none" stroke="#333333" strokeWidth="1.5" />
       {/* Core circle */}
@@ -880,15 +889,15 @@ function CouplingDiagramSVG({ offset, tilt, color, mfdRadius }: {
       <ellipse cx={fiberCx} cy={fiberCy} rx={Math.min(mfdRadius * 1.5, 38)} ry={Math.min(mfdRadius * 1.5, 38)}
         fill="none" stroke={color} strokeWidth="0.4" strokeDasharray="1,3" opacity="0.3" />
       <text x={fiberCx} y={fiberCy + 55} textAnchor="middle" fontSize="8" fill="#6b7280"
-        fontFamily="var(--font-ibm-plex-sans), system-ui, sans-serif">光纤端面</text>
+        fontFamily="system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif">光纤端面</text>
       {/* 1/e² label */}
       <text x={fiberCx + Math.min(mfdRadius, 38) + 2} y={fiberCy - 2} fontSize="6" fill="#888888"
-        fontFamily="var(--font-ibm-plex-sans), system-ui, sans-serif">1/e²</text>
+        fontFamily="system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif">1/e²</text>
 
       {/* Gaussian beam source — bell curve shape */}
       <path d={gaussPoints.join(" ")} fill={color} fillOpacity="0.06" stroke="#333333" strokeWidth="0.8" />
       <text x={gaussX + gaussW / 2} y={fiberCy + gaussH / 2 + 14} textAnchor="middle" fontSize="8" fill="#6b7280"
-        fontFamily="var(--font-ibm-plex-sans), system-ui, sans-serif">高斯光束</text>
+        fontFamily="system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif">高斯光束</text>
 
       {/* Beam path */}
       {tilt === 0 ? (
@@ -909,7 +918,7 @@ function CouplingDiagramSVG({ offset, tilt, color, mfdRadius }: {
             transform={`translate(${fiberCx - 42},${fiberCy + offset}) rotate(${offset > 0 ? 90 : -90})`}
           />
           <text x={fiberCx - 37} y={fiberCy + offset} fontSize="7" fill="#888888"
-            fontFamily="var(--font-ibm-plex-sans), system-ui, sans-serif">
+            fontFamily="system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif">
             d={offset > 0 ? "+" : ""}{(offset * 0.5).toFixed(1)}μm
           </text>
         </>
@@ -921,7 +930,7 @@ function CouplingDiagramSVG({ offset, tilt, color, mfdRadius }: {
           <path d={`M${gaussX + gaussW},${fiberCy} L${gaussX + gaussW + 25},${fiberCy - tilt * 0.3}`}
             fill="none" stroke="#888888" strokeWidth="0.5" />
           <text x={gaussX + gaussW + 28} y={fiberCy - tilt * 0.15} fontSize="7" fill="#888888"
-            fontFamily="var(--font-ibm-plex-sans), system-ui, sans-serif">
+            fontFamily="system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif">
             θ={tilt.toFixed(1)}°
           </text>
         </>
@@ -938,6 +947,8 @@ function CouplingDiagramSVG({ offset, tilt, color, mfdRadius }: {
    ═══════════════════════════════════════════════════════════════ */
 
 export default function FiberModeSimulator({ onBack }: { onBack: () => void }) {
+  const isMobile = useIsMobile();
+  const [panelOpen, setPanelOpen] = useState(false);
   const [expMode, setExpMode] = useState<ExpMode>("basic");
   const [preset, setPreset] = useState<PresetKey>("mm50");
   const [coreRadius, setCoreRadius] = useState(25); // μm
@@ -1171,13 +1182,13 @@ export default function FiberModeSimulator({ onBack }: { onBack: () => void }) {
 
       // Label
       ctx.fillStyle = "#333333";
-      ctx.font = "8px var(--font-ibm-plex-sans), system-ui, sans-serif";
+      ctx.font = "8px system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif";
       ctx.textAlign = "center";
       ctx.fillText(`LP${mode.l}${mode.m}`, ox + cs / 2, oy + cs - 2);
     });
   }, [expMode, guidedModes, wavelength]);
 
-  const FONT = "var(--font-ibm-plex-sans), system-ui, sans-serif";
+  const FONT = "system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif";
 
   return (
     <div className="flex h-full flex-col" style={{ background: "#FFFFFF" }}>
@@ -1185,11 +1196,11 @@ export default function FiberModeSimulator({ onBack }: { onBack: () => void }) {
       <div
         className="flex flex-shrink-0 items-center"
         style={{
-          height: "48px",
+          height: isMobile ? "44px" : "48px",
           backgroundColor: "#FFFFFF",
           borderBottom: "1px solid #d4d8e0",
-          paddingLeft: "24px",
-          paddingRight: "24px",
+          paddingLeft: isMobile ? "16px" : "24px",
+          paddingRight: isMobile ? "16px" : "24px",
         }}
       >
         <button
@@ -1201,23 +1212,36 @@ export default function FiberModeSimulator({ onBack }: { onBack: () => void }) {
         </button>
         <span style={{ margin: "0 12px", color: "#D0D0D0" }}>|</span>
         <h1
-          className="m-0 text-[20px] font-semibold text-[#1A1A1A]"
-          style={{ fontFamily: FONT }}
+          className="m-0 font-semibold text-[#1A1A1A]"
+          style={{
+            fontFamily: FONT,
+            fontSize: isMobile ? "17px" : "20px",
+          }}
         >
           阶跃光纤模式仿真器
         </h1>
+
+        {/* Mobile-only panel toggle */}
+        {isMobile && (
+          <MobilePanelToggle onClick={() => setPanelOpen(true)} label="参数" />
+        )}
       </div>
 
       {/* Main content */}
       <div className="flex flex-1" style={{ minHeight: 0 }}>
-        {/* Left Control Panel */}
-        <div className="w-72 shrink-0 overflow-y-auto border-r border-[#d4d8e0] bg-[#f8f9fb] p-4 custom-scrollbar">
+        {/* Left Control Panel — uses shared ControlPanel wrapper (inline on desktop, slide-in drawer on mobile) */}
+        <ControlPanel
+          open={panelOpen}
+          onClose={() => setPanelOpen(false)}
+          title="实验参数"
+          desktopWidth="w-72"
+        >
           <div className="space-y-5">
             {/* Preset */}
             <div>
               <h3
                 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-[#6b7280]"
-                style={{ fontFamily: "var(--font-ibm-plex-mono)" }}
+                style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}
               >
                 光纤预设
               </h3>
@@ -1238,7 +1262,7 @@ export default function FiberModeSimulator({ onBack }: { onBack: () => void }) {
             <div>
               <h3
                 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-[#6b7280]"
-                style={{ fontFamily: "var(--font-ibm-plex-mono)" }}
+                style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}
               >
                 光纤参数
               </h3>
@@ -1383,7 +1407,7 @@ export default function FiberModeSimulator({ onBack }: { onBack: () => void }) {
               <div className="border-t border-[#d4d8e0] pt-4">
                 <h3
                   className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-[#6b7280]"
-                  style={{ fontFamily: "var(--font-ibm-plex-mono)" }}
+                  style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}
                 >
                   模式选择
                 </h3>
@@ -1425,7 +1449,7 @@ export default function FiberModeSimulator({ onBack }: { onBack: () => void }) {
               <div className="border-t border-[#d4d8e0] pt-4">
                 <h3
                   className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-[#6b7280]"
-                  style={{ fontFamily: "var(--font-ibm-plex-mono)" }}
+                  style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}
                 >
                   耦合参数
                 </h3>
@@ -1467,7 +1491,7 @@ export default function FiberModeSimulator({ onBack }: { onBack: () => void }) {
               <div className="border-t border-[#d4d8e0] pt-4">
                 <h3
                   className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-[#6b7280]"
-                  style={{ fontFamily: "var(--font-ibm-plex-mono)" }}
+                  style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}
                 >
                   弯曲参数
                 </h3>
@@ -1493,7 +1517,7 @@ export default function FiberModeSimulator({ onBack }: { onBack: () => void }) {
             <div className="border-t border-[#d4d8e0] pt-4">
               <h3
                 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-[#6b7280]"
-                style={{ fontFamily: "var(--font-ibm-plex-mono)" }}
+                style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}
               >
                 计算结果
               </h3>
@@ -1585,12 +1609,12 @@ export default function FiberModeSimulator({ onBack }: { onBack: () => void }) {
             <div className="border-t border-[#d4d8e0] pt-4">
               <h3
                 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-[#6b7280]"
-                style={{ fontFamily: "var(--font-ibm-plex-mono)" }}
+                style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}
               >
                 公式参考
               </h3>
               <div className="space-y-1.5 rounded border border-[#d4d8e0] bg-white p-3 text-[10px] text-[#555555]"
-                style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>
+                style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>
                 <p>V = 2πa·NA/λ <span className="text-[#9ca3af]">({V.toFixed(3)})</span></p>
                 <p>NA = √(n₁²−n₂²) <span className="text-[#9ca3af]">({NA.toFixed(4)})</span></p>
                 <p>Δ = (n₁−n₂)/n₁ <span className="text-[#9ca3af]">({(delta * 100).toFixed(3)}%)</span></p>
@@ -1600,20 +1624,22 @@ export default function FiberModeSimulator({ onBack }: { onBack: () => void }) {
               </div>
             </div>
           </div>
-        </div>
+        </ControlPanel>
 
         {/* Right Visualization Area */}
         <div className="flex flex-1 flex-col bg-white" style={{ minHeight: 0 }}>
-          {/* Mode Tabs */}
+          {/* Mode Tabs — horizontal scroll on mobile */}
           <div
-            className="flex flex-shrink-0 items-center border-b border-[#d4d8e0]"
+            className={isMobile
+              ? "flex flex-shrink-0 items-center border-b border-[#d4d8e0] overflow-x-auto mobile-x-scroll"
+              : "flex flex-shrink-0 items-center border-b border-[#d4d8e0]"}
             style={{ height: "36px", paddingLeft: "12px", gap: "2px" }}
           >
             {(Object.keys(EXP_MODE_LABELS) as ExpMode[]).map((mode) => (
               <button
                 key={mode}
                 onClick={() => setExpMode(mode)}
-                className="border-none text-[11px] font-medium transition-colors duration-150"
+                className="border-none text-[11px] font-medium transition-colors duration-150 whitespace-nowrap"
                 style={{
                   padding: "4px 12px",
                   cursor: "pointer",
@@ -1633,12 +1659,12 @@ export default function FiberModeSimulator({ onBack }: { onBack: () => void }) {
             {/* ──── BASIC MODE ──── */}
             {expMode === "basic" && (
               <div className="space-y-4">
-                {/* 2D + 3D mode field side by side */}
-                <div className="flex gap-4 flex-wrap">
+                {/* 2D + 3D mode field side by side (stack on mobile) */}
+                <div className={isMobile ? "flex flex-col gap-4" : "flex gap-4 flex-wrap"}>
                   {/* 2D Mode Field */}
                   <div className="rounded border border-[#d4d8e0] p-3 bg-white">
                     <h4 className="text-[11px] font-semibold uppercase tracking-wider text-[#6b7280] mb-2"
-                      style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>
+                      style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>
                       |Ψ|² 强度分布 (2D)
                     </h4>
                     <ModeFieldCanvas
@@ -1651,7 +1677,12 @@ export default function FiberModeSimulator({ onBack }: { onBack: () => void }) {
                   </div>
 
                   {/* 3D Mode Field */}
-                  <div className="rounded border border-[#d4d8e0]" style={{ width: "300px", height: "250px" }}>
+                  <div
+                    className="rounded border border-[#d4d8e0]"
+                    style={isMobile
+                      ? { width: "100%", height: "260px" }
+                      : { width: "300px", height: "250px" }}
+                  >
                     <Canvas
                       camera={{ position: [3, 3, 3], fov: 45, near: 0.1, far: 100 }}
                       style={{ background: "#ffffff" }}
@@ -1678,12 +1709,12 @@ export default function FiberModeSimulator({ onBack }: { onBack: () => void }) {
                   </div>
                 </div>
 
-                {/* Fiber Cross-Section + Side View */}
-                <div className="flex gap-4 flex-wrap">
+                {/* Fiber Cross-Section + Side View (stack on mobile) */}
+                <div className={isMobile ? "flex flex-col gap-4" : "flex gap-4 flex-wrap"}>
                   {/* Fiber Cross-Section */}
                   <div className="rounded border border-[#d4d8e0] p-3 bg-white">
                     <h4 className="text-[11px] font-semibold uppercase tracking-wider text-[#6b7280] mb-2"
-                      style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>
+                      style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>
                       光纤截面
                     </h4>
                     <FiberCrossSectionSVG
@@ -1696,7 +1727,7 @@ export default function FiberModeSimulator({ onBack }: { onBack: () => void }) {
                   {/* Fiber Side View */}
                   <div className="rounded border border-[#d4d8e0] p-3 bg-white">
                     <h4 className="text-[11px] font-semibold uppercase tracking-wider text-[#6b7280] mb-2"
-                      style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>
+                      style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>
                       侧视图 · 光束传播
                     </h4>
                     <FiberSideViewSVG
@@ -1709,11 +1740,11 @@ export default function FiberModeSimulator({ onBack }: { onBack: () => void }) {
                 {/* Mode formula reference */}
                 <div className="rounded border border-[#d4d8e0] bg-[#fafbfc] p-3">
                   <h4 className="text-[11px] font-semibold uppercase tracking-wider text-[#6b7280] mb-2"
-                    style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>
+                    style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>
                     模式场公式
                   </h4>
                   <div className="space-y-1 text-[11px] text-[#555555]"
-                    style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>
+                    style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>
                     <p>Ψ(r,φ) = R(r) · cos(lφ)</p>
                     <p>芯层 (r&lt;a): R(r) = J_l(u·r/a) / J_l(u)</p>
                     <p>包层 (r&gt;a): R(r) = K_l(w·r/a) / K_l(w)</p>
@@ -1728,7 +1759,7 @@ export default function FiberModeSimulator({ onBack }: { onBack: () => void }) {
               <div className="space-y-4">
                 {/* Mode count summary */}
                 <div className="rounded border border-[#d4d8e0] bg-white p-4">
-                  <div className="flex items-center gap-6">
+                  <div className={isMobile ? "grid grid-cols-2 gap-4" : "flex items-center gap-6"}>
                     <div>
                       <span className="text-[11px] text-[#6b7280]">V 数</span>
                       <div className="mono-digits text-[20px] font-semibold text-[#1a1a2e]">{V.toFixed(2)}</div>
@@ -1755,21 +1786,24 @@ export default function FiberModeSimulator({ onBack }: { onBack: () => void }) {
                 {guidedModes.length > 0 && (
                   <div className="rounded border border-[#d4d8e0] p-3 bg-white">
                     <h4 className="text-[11px] font-semibold uppercase tracking-wider text-[#6b7280] mb-2"
-                      style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>
+                      style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>
                       模式场分布 (前{Math.min(24, guidedModes.length)}个)
                     </h4>
-                    <canvas ref={modeFieldCanvasRef} />
+                    <div className="overflow-x-auto mobile-x-scroll">
+                      <canvas ref={modeFieldCanvasRef} style={{ maxWidth: "100%" }} />
+                    </div>
                   </div>
                 )}
 
                 {/* Mode list table */}
                 <div className="rounded border border-[#d4d8e0] bg-white overflow-hidden">
                   <h4 className="text-[11px] font-semibold uppercase tracking-wider text-[#6b7280] px-3 pt-3 pb-2"
-                    style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>
+                    style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>
                     引导模式列表
                   </h4>
                   <div className="max-h-64 overflow-y-auto custom-scrollbar">
-                    <table className="w-full text-[11px]">
+                    <div className={isMobile ? "overflow-x-auto mobile-x-scroll" : undefined}>
+                      <table className="w-full text-[11px]" style={isMobile ? { minWidth: "360px" } : undefined}>
                       <thead>
                         <tr className="border-b border-[#e8ecf0] bg-[#f8f9fb]">
                           <th className="text-left px-3 py-1.5 font-semibold text-[#6b7280]">模式</th>
@@ -1791,6 +1825,7 @@ export default function FiberModeSimulator({ onBack }: { onBack: () => void }) {
                         ))}
                       </tbody>
                     </table>
+                    </div>
                     {guidedModes.length > 30 && (
                       <div className="px-3 py-2 text-[10px] text-[#9ca3af]">
                         ... 及其他 {guidedModes.length - 30} 个模式
@@ -1807,7 +1842,7 @@ export default function FiberModeSimulator({ onBack }: { onBack: () => void }) {
                 {/* n_eff vs λ curve */}
                 <div className="rounded border border-[#d4d8e0] p-3 bg-white">
                   <h4 className="text-[11px] font-semibold uppercase tracking-wider text-[#6b7280] mb-2"
-                    style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>
+                    style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>
                     有效折射率 n_eff(λ)
                   </h4>
                   <DispersionCurveSVG
@@ -1818,10 +1853,10 @@ export default function FiberModeSimulator({ onBack }: { onBack: () => void }) {
                 {/* Dispersion metrics */}
                 <div className="rounded border border-[#d4d8e0] bg-white p-4">
                   <h4 className="text-[11px] font-semibold uppercase tracking-wider text-[#6b7280] mb-3"
-                    style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>
+                    style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>
                     色散参数
                   </h4>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className={isMobile ? "grid grid-cols-1 gap-3" : "grid grid-cols-2 gap-4"}>
                     <div className="rounded border border-[#e8ecf0] p-3">
                       <span className="text-[10px] text-[#6b7280] block">模式色散</span>
                       <span className="mono-digits text-[16px] font-semibold text-[#1a1a2e]">
@@ -1856,12 +1891,13 @@ export default function FiberModeSimulator({ onBack }: { onBack: () => void }) {
                 {/* Group delay SVG */}
                 <div className="rounded border border-[#d4d8e0] bg-white p-3">
                   <h4 className="text-[11px] font-semibold uppercase tracking-wider text-[#6b7280] mb-2"
-                    style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>
+                    style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>
                     模式群时延 (多模)
                   </h4>
                   {guidedModes.length > 1 ? (
                     <svg width="280" height={Math.min(120, 20 + guidedModes.length * 14)}
-                      viewBox={`0 0 280 ${Math.min(120, 20 + guidedModes.length * 14)}`}>
+                      viewBox={`0 0 280 ${Math.min(120, 20 + guidedModes.length * 14)}`}
+                      className="svg-responsive" style={{ maxWidth: "100%" }}>
                       {guidedModes.slice(0, 8).map((mode, idx) => {
                         const groupDelay = (n1 * delta * (1 - mode.cutoffV / V)) * 1e3;
                         const barWidth = Math.abs(groupDelay) * 500;
@@ -1890,7 +1926,7 @@ export default function FiberModeSimulator({ onBack }: { onBack: () => void }) {
                 {/* Coupling diagram */}
                 <div className="rounded border border-[#d4d8e0] p-3 bg-white">
                   <h4 className="text-[11px] font-semibold uppercase tracking-wider text-[#6b7280] mb-2"
-                    style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>
+                    style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>
                     耦合示意
                   </h4>
                   <CouplingDiagramSVG
@@ -1904,19 +1940,19 @@ export default function FiberModeSimulator({ onBack }: { onBack: () => void }) {
                 {/* Efficiency display */}
                 <div className="rounded border border-[#d4d8e0] bg-white p-4">
                   <h4 className="text-[11px] font-semibold uppercase tracking-wider text-[#6b7280] mb-3"
-                    style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>
+                    style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>
                     耦合效率
                   </h4>
                   <div className="flex items-center gap-4">
                     <div>
                       <span className="text-[10px] text-[#6b7280] block">η</span>
-                      <span className="mono-digits text-[24px] font-semibold text-[#1a1a2e]">
+                      <span className="mono-digits text-[20px] font-semibold text-[#1a1a2e]">
                         {(couplingEfficiency * 100).toFixed(2)}%
                       </span>
                     </div>
                     <div>
                       <span className="text-[10px] text-[#6b7280] block">插入损耗</span>
-                      <span className="mono-digits text-[16px] font-semibold text-[#1a1a2e]">
+                      <span className="mono-digits text-[14px] font-semibold text-[#1a1a2e]">
                         {couplingEfficiency > 0 ? (-10 * Math.log10(couplingEfficiency)).toFixed(2) : "∞"}
                       </span>
                       <span className="text-[10px] text-[#6b7280]"> dB</span>
@@ -1938,7 +1974,7 @@ export default function FiberModeSimulator({ onBack }: { onBack: () => void }) {
                 {/* Loss breakdown */}
                 <div className="rounded border border-[#d4d8e0] bg-white p-4">
                   <h4 className="text-[11px] font-semibold uppercase tracking-wider text-[#6b7280] mb-3"
-                    style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>
+                    style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>
                     损耗分解
                   </h4>
                   <div className="space-y-2">
@@ -1964,11 +2000,11 @@ export default function FiberModeSimulator({ onBack }: { onBack: () => void }) {
                 {/* Marcuse formula reference */}
                 <div className="rounded border border-[#d4d8e0] bg-[#fafbfc] p-3">
                   <h4 className="text-[11px] font-semibold uppercase tracking-wider text-[#6b7280] mb-2"
-                    style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>
+                    style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>
                     Marcuse耦合公式
                   </h4>
                   <div className="space-y-1 text-[11px] text-[#555555]"
-                    style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>
+                    style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>
                     <p>η = exp(-d²/w₀²) · exp(-(πw₀θ/λ)²)</p>
                     <p>w₀ ≈ {coreRadius === 4.1 ? "4.8" : (coreRadius * 0.65).toFixed(1)} μm (模场半径)</p>
                   </div>
@@ -1982,10 +2018,10 @@ export default function FiberModeSimulator({ onBack }: { onBack: () => void }) {
                 {/* Bending diagram */}
                 <div className="rounded border border-[#d4d8e0] p-3 bg-white">
                   <h4 className="text-[11px] font-semibold uppercase tracking-wider text-[#6b7280] mb-2"
-                    style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>
+                    style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>
                     宏弯损耗示意
                   </h4>
-                  <svg width="280" height="140" viewBox="0 0 280 140">
+                  <svg width="280" height="140" viewBox="0 0 280 140" className="svg-responsive" style={{ maxWidth: "100%" }}>
                     {/* Bent fiber arc */}
                     <path
                       d={`M 40,${70 + bendRadius * 0.5} Q 140,${70 - bendRadius * 0.3} 240,${70 + bendRadius * 0.5}`}
@@ -2012,10 +2048,10 @@ export default function FiberModeSimulator({ onBack }: { onBack: () => void }) {
                 {/* Bending loss metrics */}
                 <div className="rounded border border-[#d4d8e0] bg-white p-4">
                   <h4 className="text-[11px] font-semibold uppercase tracking-wider text-[#6b7280] mb-3"
-                    style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>
+                    style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>
                     弯曲损耗
                   </h4>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className={isMobile ? "grid grid-cols-1 gap-3" : "grid grid-cols-2 gap-4"}>
                     <div className="rounded border border-[#e8ecf0] p-3">
                       <span className="text-[10px] text-[#6b7280] block">宏弯损耗</span>
                       <span className="mono-digits text-[16px] font-semibold text-[#1a1a2e]">
@@ -2036,10 +2072,10 @@ export default function FiberModeSimulator({ onBack }: { onBack: () => void }) {
                 {/* Loss vs R curve */}
                 <div className="rounded border border-[#d4d8e0] p-3 bg-white">
                   <h4 className="text-[11px] font-semibold uppercase tracking-wider text-[#6b7280] mb-2"
-                    style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>
+                    style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>
                     损耗 vs 弯曲半径
                   </h4>
-                  <svg width="280" height="120" viewBox="0 0 280 120">
+                  <svg width="280" height="120" viewBox="0 0 280 120" className="svg-responsive" style={{ maxWidth: "100%" }}>
                     {/* Axes */}
                     <line x1="35" y1="10" x2="35" y2="95" stroke="#333333" strokeWidth="1" />
                     <line x1="35" y1="95" x2="270" y2="95" stroke="#333333" strokeWidth="1" />
@@ -2076,11 +2112,11 @@ export default function FiberModeSimulator({ onBack }: { onBack: () => void }) {
                 {/* Reference */}
                 <div className="rounded border border-[#d4d8e0] bg-[#fafbfc] p-3">
                   <h4 className="text-[11px] font-semibold uppercase tracking-wider text-[#6b7280] mb-2"
-                    style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>
+                    style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>
                     弯曲损耗公式
                   </h4>
                   <div className="space-y-1 text-[11px] text-[#555555]"
-                    style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>
+                    style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>
                     <p>α = (√π/2V²)·(u₀/w)²·√(a/R)·e^(-2w³/3V²a/R)</p>
                     <p>Marcuse bending loss formula (step-index)</p>
                     <p>单模光纤临界弯曲半径 ~{(() => {
@@ -2104,14 +2140,24 @@ export default function FiberModeSimulator({ onBack }: { onBack: () => void }) {
           height: "24px",
           backgroundColor: "#FFFFFF",
           borderTop: "1px solid #d4d8e0",
-          paddingLeft: "24px",
+          paddingLeft: isMobile ? "16px" : "24px",
+          paddingRight: isMobile ? "16px" : "24px",
+          overflow: "hidden",
         }}
       >
         <span
-          className="tabular-nums text-[10px] font-normal text-[#888888]"
-          style={{ fontFamily: FONT }}
+          className="tabular-nums font-normal text-[#888888]"
+          style={{
+            fontFamily: FONT,
+            fontSize: isMobile ? "9px" : "10px",
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
         >
-          v2.1 · 现代光学模块 — 光纤LP模式·色散·耦合·弯曲损耗
+          {isMobile
+            ? "v2.1 · 光纤模式仿真器"
+            : "v2.1 · 现代光学模块 — 光纤LP模式·色散·耦合·弯曲损耗"}
         </span>
       </div>
     </div>

@@ -17,6 +17,8 @@ import {
   retardationToMichelLevy,
   type BirefringenceParams,
 } from "@/lib/optics/birefringence";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { ControlPanel, MobilePanelToggle } from "./shared/ControlPanel";
 
 /* ─── Michel-Lévy Chart Reusable Canvas ─── */
 function MichelLevyChart({ width = 280, height = 40 }: { width?: number; height?: number }) {
@@ -54,11 +56,11 @@ function MichelLevyChart({ width = 280, height = 40 }: { width?: number; height?
     ctx.fillText("2000 nm", width, height - 1);
   }, [width, height]);
 
-  return <canvas ref={canvasRef} style={{ width, height }} />;
+  return <canvas ref={canvasRef} style={{ width, maxWidth: "100%", height: "auto" }} />;
 }
 
 /* ─── Types ─── */
-type DemoPattern = "disk" | "plate" | "beam" | "residual";
+type DemoPattern = "disk" | "plate" | "beam" | "residual" | "notch" | "ring" | "crack";
 type ExperimentMode = "demo" | "quantitative" | "teaching" | "3d";
 type LightSourceMode = "white" | "red" | "green" | "blue";
 
@@ -67,6 +69,9 @@ const DEMO_PATTERN_LABELS: Record<DemoPattern, string> = {
   plate: "方板拉伸",
   beam: "梁弯曲",
   residual: "残余应力",
+  notch: "缺口板",
+  ring: "圆环受压",
+  crack: "裂纹尖端",
 };
 
 const DEMO_PATTERN_DESC: Record<DemoPattern, string> = {
@@ -74,6 +79,9 @@ const DEMO_PATTERN_DESC: Record<DemoPattern, string> = {
   plate: "对角等色线 — 单轴拉伸板的应力双折射条纹",
   beam: "中性轴 + 弯曲条纹 — 梁弯曲时的应力分布",
   residual: "不规则图样 — 钢化玻璃的残余应力分布",
+  notch: "应力集中 — V型缺口板的应力流线，缺口根部条纹密集",
+  ring: "圆环内压 — 受内外压的圆环，呈现对称应力分布",
+  crack: "Westergaard场 — 裂纹尖端奇异应力场，1/√r衰减",
 };
 
 const LIGHT_SOURCE_LABELS: Record<LightSourceMode, string> = {
@@ -89,6 +97,29 @@ const WAVELENGTHS: Record<LightSourceMode, number> = {
   green: 530,
   blue: 460,
 };
+
+/* ─── Photoelastic material library (stress-optic coefficient C in Brewster = 10⁻¹² Pa⁻¹) ─── */
+type Material = "custom" | "polycarbonate" | "epoxy" | "pmma" | "glass" | "bakelite";
+const MATERIAL_LABELS: Record<Material, string> = {
+  custom: "自定义",
+  polycarbonate: "聚碳酸酯 (PC)",
+  epoxy: "环氧树脂",
+  pmma: "PMMA (亚克力)",
+  glass: "硼硅玻璃",
+  bakelite: "酚醛树脂 (Bakelite)",
+};
+const MATERIAL_C: Record<Material, number> = {
+  // Typical stress-optic constants C in Brewster (10⁻¹² Pa⁻¹)
+  custom: 0,
+  polycarbonate: 9.0,
+  epoxy: 5.5,
+  pmma: 3.5,
+  glass: 2.7,
+  bakelite: 4.5,
+};
+
+/* ─── Isoclinic scan animation parameters ─── */
+const ISOCLINIC_STEPS = 18; // 18 steps × 10° = 180° rotation
 
 /* ─── Stress-optical standard color map ─── */
 function stressColorMap(retardationNm: number): [number, number, number] {
@@ -146,23 +177,39 @@ function singleWavelengthColor(
   return [0, 0, v];
 }
 
-/* ─── White-light dispersion color (R/G/B computed separately) ─── */
+/* ─── White-light dispersion color (R/G/B computed separately)
+ *  Models spectral dispersion of birefringence: Δn(λ) = Δn₀·(1 + k·(λ-λ₀))
+ *  The birefCoeff controls the magnitude of the dispersion effect.
+ *  Each RGB channel uses its own effective retardation (no cancellation).
+ */
 function dispersionWhiteLightColor(
   retardationNm: number,
   birefCoeff: number
 ): [number, number, number] {
   const lambda0 = 550;
-  const k = 0.002;
-  const cR = birefCoeff * (1 + k * (630 - lambda0));
-  const cG = birefCoeff * (1 + k * (530 - lambda0));
-  const cB = birefCoeff * (1 + k * (460 - lambda0));
-  const retR = retardationNm * cR / birefCoeff;
-  const retG = retardationNm * cG / birefCoeff;
-  const retB = retardationNm * cB / birefCoeff;
+  // dispersion factor - now birefCoeff meaningfully modulates the effect
+  const k = 0.0015 * birefCoeff;
+  // Effective retardation per RGB channel (different wavelengths see different R)
+  const retR = retardationNm * (1 + k * (630 - lambda0));
+  const retG = retardationNm * (1 + k * (530 - lambda0));
+  const retB = retardationNm * (1 + k * (460 - lambda0));
+  // Each channel's intensity follows sin²(πR/λ) interference
   const Ir = Math.pow(Math.sin(Math.PI * retR / 630), 2) * 255;
   const Ig = Math.pow(Math.sin(Math.PI * retG / 530), 2) * 255;
   const Ib = Math.pow(Math.sin(Math.PI * retB / 460), 2) * 255;
   return [Math.round(Ir), Math.round(Ig), Math.round(Ib)];
+}
+
+/* ─── Unified color dispatcher: chooses encoding based on light source mode ─── */
+function getStressColor(
+  retardationNm: number,
+  lightMode: LightSourceMode,
+  birefCoeff: number
+): [number, number, number] {
+  if (lightMode === "white") {
+    return dispersionWhiteLightColor(retardationNm, birefCoeff);
+  }
+  return singleWavelengthColor(retardationNm, WAVELENGTHS[lightMode]);
 }
 
 /* ─── Demo pattern retardation generators ─── */
@@ -277,6 +324,131 @@ function residualStressRetardation(
   return Math.max(0, retardation + fineFringes);
 }
 
+/* ─── Notched plate under tension (stress concentration at V-notch root) ─── */
+function notchedPlateRetardation(
+  x: number, y: number, cx: number, cy: number,
+  w: number, h: number, stressFactor: number,
+  birefCoeff: number, rotation: number
+): number {
+  const cosR = Math.cos(rotation);
+  const sinR = Math.sin(rotation);
+  const dx = x - cx;
+  const dy = y - cy;
+  const rx = dx * cosR - dy * sinR;
+  const ry = dx * sinR + dy * cosR;
+  const halfW = w * 0.45;
+  const halfH = h * 0.4;
+  if (Math.abs(rx) > halfW || Math.abs(ry) > halfH) return 0;
+  // V-notch on the right edge at y=0
+  const notchDepth = halfH * 0.5;
+  const notchHalfAngle = Math.PI / 6; // 30° half-angle
+  // Distance from notch root (located at (halfW - notchDepth*tan(angle), 0))
+  const notchRootX = halfW - notchDepth * Math.tan(notchHalfAngle);
+  const ndx = rx - notchRootX;
+  const ndy = ry;
+  const distFromNotch = Math.sqrt(ndx * ndx + ndy * ndy);
+  const notchAngle = Math.atan2(ndy, ndx);
+  // Inside the notch (excluded region)
+  if (rx > notchRootX && Math.abs(ry) < (rx - notchRootX) * Math.tan(notchHalfAngle)) {
+    return 0;
+  }
+  // Stress concentration factor ~ K_t = 1 + 2*sqrt(a/rho)
+  const rho = halfH * 0.05; // notch root radius
+  const kt = 1 + 2 * Math.sqrt(notchDepth / Math.max(rho, 1));
+  // Far-field uniform stress, amplified near notch root
+  const nx = rx / halfW;
+  const farField = stressFactor * birefCoeff * (0.6 + 0.4 * (1 - nx * nx));
+  // Stress concentration: decays as 1/r from notch root, modulated by angle
+  const angularFactor = 0.5 + 0.5 * Math.cos(notchAngle * 1.5);
+  const radialDecay = rho / Math.max(distFromNotch, rho);
+  const concentrated = kt * farField * radialDecay * angularFactor;
+  // Streamline-like fringes flowing around the notch
+  const flowFringe = 0.5 + 0.5 * Math.cos(
+    Math.PI * (distFromNotch / halfW) * stressFactor * 1.5 + notchAngle * 2
+  );
+  const retardation = (farField + concentrated * 2) * 280 * flowFringe;
+  return Math.max(0, retardation);
+}
+
+/* ─── Ring under internal pressure (Lamé thick-walled cylinder) ─── */
+function ringPressureRetardation(
+  x: number, y: number, cx: number, cy: number,
+  w: number, h: number, stressFactor: number,
+  birefCoeff: number, rotation: number
+): number {
+  const cosR = Math.cos(rotation);
+  const sinR = Math.sin(rotation);
+  const dx = x - cx;
+  const dy = y - cy;
+  const rx = dx * cosR - dy * sinR;
+  const ry = dx * sinR + dy * cosR;
+  const outerR = Math.min(w, h) * 0.42;
+  const innerR = outerR * 0.5;
+  const dist = Math.sqrt(rx * rx + ry * ry);
+  if (dist > outerR || dist < innerR) return 0;
+  // Lamé equations for thick-walled cylinder under internal pressure p_i:
+  // σ_r = p_i·a²/(b²-a²)·(1 - b²/r²)
+  // σ_θ = p_i·a²/(b²-a²)·(1 + b²/r²)
+  // σ_r - σ_θ = -2·p_i·a²·b² / ((b²-a²)·r²)
+  const a = innerR, b = outerR;
+  const b2ma2 = b * b - a * a;
+  const stressDiff = Math.abs(
+    -2 * stressFactor * birefCoeff * a * a * b * b / (b2ma2 * dist * dist)
+  );
+  // Isochromate fringe modulation
+  const fringeMod = 0.6 + 0.4 * Math.cos(Math.PI * stressDiff * 2.2);
+  const retardation = stressDiff * 320 * fringeMod;
+  // Angular detail (hoop stress direction creates fine structure)
+  const theta = Math.atan2(ry, rx);
+  const angularDetail = 12 * Math.cos(2 * theta) * birefCoeff;
+  return Math.max(0, retardation + angularDetail);
+}
+
+/* ─── Crack-tip Westergaard stress field ( Mode I, 1/√r singularity ) ─── */
+function crackTipRetardation(
+  x: number, y: number, cx: number, cy: number,
+  w: number, h: number, stressFactor: number,
+  birefCoeff: number, rotation: number
+): number {
+  const cosR = Math.cos(rotation);
+  const sinR = Math.sin(rotation);
+  const dx = x - cx;
+  const dy = y - cy;
+  const rx = dx * cosR - dy * sinR;
+  const ry = dx * sinR + dy * cosR;
+  const halfW = w * 0.45;
+  const halfH = h * 0.4;
+  if (Math.abs(rx) > halfW || Math.abs(ry) > halfH) return 0;
+  // Inside the crack (negative x, small |y|)
+  if (rx < 0 && Math.abs(ry) < h * 0.015) return 0;
+  // Westergaard Mode I near-tip field (plane stress):
+  // σ_1 - σ_2 = 2·K_I/√(2πr) · |sin(θ)| (max shear)
+  const r = Math.sqrt(rx * rx + ry * ry);
+  const theta = Math.atan2(ry, Math.max(rx, 0.01));
+  // Avoid singularity at r=0
+  const rEff = Math.max(r, h * 0.01);
+  const K = stressFactor * birefCoeff * 8; // stress intensity factor proxy
+  const invSqrtR = 1 / Math.sqrt(rEff);
+  const stressDiff = 2 * K * invSqrtR * Math.abs(Math.sin(theta));
+  // Isochromate fringes form characteristic "butterfly" lobes
+  const fringeMod = 0.5 + 0.5 * Math.cos(
+    2 * (stressDiff * Math.PI - theta / 2)
+  );
+  const retardation = stressDiff * 250 * fringeMod;
+  return Math.max(0, retardation);
+}
+
+/* ─── Single lookup table for all demo patterns (eliminates duplicated switches) ─── */
+const PATTERN_GENERATORS: Record<DemoPattern, typeof diskCompressionRetardation> = {
+  disk: diskCompressionRetardation,
+  plate: plateTensionRetardation,
+  beam: beamBendingRetardation,
+  residual: residualStressRetardation,
+  notch: notchedPlateRetardation,
+  ring: ringPressureRetardation,
+  crack: crackTipRetardation,
+};
+
 /* ─── Teaching library pattern generators ─── */
 function threePointBendingIsochromates(
   x: number, y: number, cx: number, cy: number,
@@ -356,6 +528,21 @@ function getFastAxisAngle(
       const angle = Math.atan2(dy, dx);
       return angle * 0.5 + 0.3;
     }
+    case "notch": {
+      // Principal stress flows around notch — tangential near root
+      const angle = Math.atan2(dy, dx);
+      return angle + Math.PI / 4;
+    }
+    case "ring": {
+      // Hoop stress direction (tangential)
+      const angle = Math.atan2(dy, dx);
+      return angle + Math.PI / 2;
+    }
+    case "crack": {
+      // Principal stress at 45° to crack plane (Mode I)
+      const angle = Math.atan2(dy, Math.max(dx, 0.01));
+      return angle / 2 + Math.PI / 4;
+    }
   }
 }
 
@@ -387,7 +574,7 @@ function TeachingPatternCanvas({
     for (let py = 0; py < height; py++) {
       for (let px = 0; px < width; px++) {
         const idx = (py * width + px) * 4;
-        const ret = generator(px, py, cxLocal, cyLocal, width, height);
+        const ret = generator(px + 0.5, py + 0.5, cxLocal, cyLocal, width, height);
         if (ret > 2) {
           const [cr, cg, cb] = stressColorMap(ret);
           data[idx] = cr;
@@ -405,6 +592,113 @@ function TeachingPatternCanvas({
     }
     ctx.putImageData(imageData, 0, 0);
   }, [generator, width, height]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      className="border border-[#d4d8e0] bg-[#0F0F0F]"
+      style={{ width, height }}
+    />
+  );
+}
+
+/* ─── Isoclinic Scan Canvas: disk under diametral compression with rotating polarizer ─── */
+function IsoclinicScanCanvas({
+  polarizerAngle,
+  width = 220,
+  height = 180,
+}: {
+  polarizerAngle: number;
+  width?: number;
+  height?: number;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    canvas.width = width;
+    canvas.height = height;
+    const cx = width / 2;
+    const cy = height / 2;
+
+    const imageData = ctx.createImageData(width, height);
+    const data = imageData.data;
+    const polRad = (polarizerAngle * Math.PI) / 180;
+    const maxR = Math.min(width, height) * 0.42;
+
+    for (let py = 0; py < height; py++) {
+      for (let px = 0; px < width; px++) {
+        const dx = px + 0.5 - cx;
+        const dy = py + 0.5 - cy;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const idx = (py * width + px) * 4;
+
+        if (dist > maxR) {
+          // Background: dark
+          data[idx] = 15;
+          data[idx + 1] = 15;
+          data[idx + 2] = 15;
+          data[idx + 3] = 255;
+          continue;
+        }
+
+        const rn = dist / maxR;
+        // Principal stress direction φ (using the disk model)
+        const sigmaX = 1 - rn * rn * (1 - 2 * (dx * dx) / (dist * dist + 0.01));
+        const sigmaY = 1 - rn * rn * (1 - 2 * (dy * dy) / (dist * dist + 0.01));
+        const tauXY = -2 * rn * rn * dx * dy / (dist * dist + 0.01);
+        const phi = 0.5 * Math.atan2(2 * tauXY, sigmaX - sigmaY);
+
+        // Isochromate (color, stress difference)
+        const stressDiff = Math.sqrt(
+          (sigmaX - sigmaY) ** 2 + 4 * tauXY * tauXY
+        ) * (1 - rn * rn) * 5;
+        const ret = Math.abs(stressDiff) * 200;
+
+        // Isoclinic: dark when φ matches polarizer angle
+        // cos²(2·(φ - θ_polarizer)) → 0 (dark) when aligned, 1 (bright) when at 45°
+        const isoclinicFactor = Math.pow(Math.cos(2 * (phi - polRad)), 2);
+
+        if (ret > 2) {
+          const [cr, cg, cb] = stressColorMap(ret);
+          // Apply isoclinic darkening
+          const brightness = 0.15 + 0.85 * isoclinicFactor;
+          data[idx] = Math.round(cr * brightness);
+          data[idx + 1] = Math.round(cg * brightness);
+          data[idx + 2] = Math.round(cb * brightness);
+          data[idx + 3] = 255;
+        } else {
+          const brightness = 15 + Math.round(ret * 4 * isoclinicFactor);
+          data[idx] = brightness;
+          data[idx + 1] = brightness;
+          data[idx + 2] = brightness;
+          data[idx + 3] = 255;
+        }
+      }
+    }
+    ctx.putImageData(imageData, 0, 0);
+
+    // Draw polarizer angle indicator
+    ctx.strokeStyle = "#FFFFFF";
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    const endX = cx + Math.cos(polRad) * maxR;
+    const endY = cy + Math.sin(polRad) * maxR;
+    ctx.moveTo(cx - Math.cos(polRad) * maxR, cy - Math.sin(polRad) * maxR);
+    ctx.lineTo(endX, endY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Label
+    ctx.fillStyle = "#FFFFFF";
+    ctx.font = "9px IBM Plex Sans, sans-serif";
+    ctx.textAlign = "right";
+    ctx.fillText(`θ = ${polarizerAngle}°`, width - 4, height - 4);
+  }, [polarizerAngle, width, height]);
 
   return (
     <canvas
@@ -548,14 +842,10 @@ function StressSurface3D({
   birefCoeffForLight: number;
   lightSourceMode: LightSourceMode;
 }) {
-  const getRetardation = useMemo(() => {
-    switch (demoPattern) {
-      case "disk": return diskCompressionRetardation;
-      case "plate": return plateTensionRetardation;
-      case "beam": return beamBendingRetardation;
-      case "residual": return residualStressRetardation;
-    }
-  }, [demoPattern]);
+  const getRetardation = useMemo(
+    () => PATTERN_GENERATORS[demoPattern],
+    [demoPattern]
+  );
 
   return (
     <div className="w-full h-full flex flex-col">
@@ -591,17 +881,17 @@ function StressSurface3D({
       {/* Color legend / axis labels */}
       <div className="flex items-center justify-center gap-4 mt-2 px-2">
         <div className="flex items-center gap-1.5">
-          <span className="text-[9px] text-[#9ca3af]" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>
+          <span className="text-[9px] text-[#9ca3af]" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>
             X / Y: 位置
           </span>
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="text-[9px] text-[#9ca3af]" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>
+          <span className="text-[9px] text-[#9ca3af]" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>
             Z: 延迟量 (nm)
           </span>
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="text-[9px] text-[#9ca3af]" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>
+          <span className="text-[9px] text-[#9ca3af]" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>
             颜色: 干涉色
           </span>
         </div>
@@ -609,7 +899,7 @@ function StressSurface3D({
       <div className="flex justify-center mt-1">
         <div
           className="text-[9px] text-[#6b7280]"
-          style={{ fontFamily: "var(--font-ibm-plex-mono)" }}
+          style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}
         >
           {DEMO_PATTERN_LABELS[demoPattern]} — 鼠标拖拽旋转 / 滚轮缩放
         </div>
@@ -619,7 +909,7 @@ function StressSurface3D({
         <div>
           <div
             className="text-[9px] text-[#9ca3af] text-center mb-1"
-            style={{ fontFamily: "var(--font-ibm-plex-mono)" }}
+            style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}
           >
             Michel-Lévy 干涉色参考
           </div>
@@ -632,6 +922,10 @@ function StressSurface3D({
 
 /* ─── Main Component ─── */
 export default function PolarizationScanner({ onBack }: { onBack: () => void }) {
+  // Mobile layout state
+  const isMobile = useIsMobile();
+  const [panelOpen, setPanelOpen] = useState(false);
+
   // Camera mode state
   const [streaming, setStreaming] = useState(false);
   const [sensitivity, setSensitivity] = useState(1.0);
@@ -674,6 +968,15 @@ export default function PolarizationScanner({ onBack }: { onBack: () => void }) 
   // NEW: Quantitative measurement state
   const [weight, setWeight] = useState(0);
   const [stressData, setStressData] = useState<{ weight: number; retardation: number }[]>([]);
+
+  // NEW: Sample geometry & material for quantitative mode
+  const [sampleWidth, setSampleWidth] = useState(10); // mm (beam width b)
+  const [sampleThickness, setSampleThickness] = useState(5); // mm (depth d)
+  const [material, setMaterial] = useState<Material>("custom");
+
+  // NEW: Isoclinic scan animation state (teaching mode)
+  const [isoclinicAngle, setIsoclinicAngle] = useState(0);
+  const [isoclinicPlaying, setIsoclinicPlaying] = useState(false);
 
   // Demo canvas ref
   const demoCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -831,32 +1134,18 @@ export default function PolarizationScanner({ onBack }: { onBack: () => void }) 
       const imageData = ctx.createImageData(W, H);
       const data = imageData.data;
 
-      let getRetardation: typeof diskCompressionRetardation;
-      switch (pattern) {
-        case "disk":
-          getRetardation = diskCompressionRetardation;
-          break;
-        case "plate":
-          getRetardation = plateTensionRetardation;
-          break;
-        case "beam":
-          getRetardation = beamBendingRetardation;
-          break;
-        case "residual":
-          getRetardation = residualStressRetardation;
-          break;
-      }
+      const getRetardation = PATTERN_GENERATORS[pattern];
 
       for (let py = 0; py < H; py++) {
         for (let px = 0; px < W; px++) {
           const idx = (py * W + px) * 4;
-          let ret = getRetardation(px, py, cx, cy, W, H, sf, bc, rot);
+          let ret = getRetardation(px + 0.5, py + 0.5, cx, cy, W, H, sf, bc, rot);
           const scaledRet = (ret / 1000) * scale;
 
           // Weight effect in quantitative mode
           if (expMode === "quantitative" && wt > 0) {
             const distFromCenter = Math.sqrt(
-              (px - cx) * (px - cx) + (py - cy) * (py - cy)
+              (px + 0.5 - cx) * (px + 0.5 - cx) + (py + 0.5 - cy) * (py + 0.5 - cy)
             );
             const maxDist = Math.min(W, H) * 0.3;
             if (distFromCenter < maxDist) {
@@ -942,6 +1231,15 @@ export default function PolarizationScanner({ onBack }: { onBack: () => void }) 
     };
   }, []);
 
+  /* ─── Isoclinic scan animation (teaching mode) ─── */
+  useEffect(() => {
+    if (!isoclinicPlaying) return;
+    const id = setInterval(() => {
+      setIsoclinicAngle((prev) => (prev + 10) % 180);
+    }, 400);
+    return () => clearInterval(id);
+  }, [isoclinicPlaying]);
+
   /* ─── Sénarmont I-θ curve canvas ─── */
   const senarmontCanvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -966,13 +1264,7 @@ export default function PolarizationScanner({ onBack }: { onBack: () => void }) 
     const rot = (rotationAngle * Math.PI) / 180;
     const scale = retardationScale;
 
-    let getRetardation: typeof diskCompressionRetardation;
-    switch (pattern) {
-      case "disk": getRetardation = diskCompressionRetardation; break;
-      case "plate": getRetardation = plateTensionRetardation; break;
-      case "beam": getRetardation = beamBendingRetardation; break;
-      case "residual": getRetardation = residualStressRetardation; break;
-    }
+    const getRetardation = PATTERN_GENERATORS[pattern];
 
     const centerRet = getRetardation(200, 150, 200, 150, 400, 300, sf, bc, rot);
     const scaledCenterRet = (centerRet / 1000) * scale;
@@ -1042,13 +1334,7 @@ export default function PolarizationScanner({ onBack }: { onBack: () => void }) 
     const rot = (rotationAngle * Math.PI) / 180;
     const scale = retardationScale;
 
-    let getRetardation: typeof diskCompressionRetardation;
-    switch (pattern) {
-      case "disk": getRetardation = diskCompressionRetardation; break;
-      case "plate": getRetardation = plateTensionRetardation; break;
-      case "beam": getRetardation = beamBendingRetardation; break;
-      case "residual": getRetardation = residualStressRetardation; break;
-    }
+    const getRetardation = PATTERN_GENERATORS[pattern];
 
     const centerRet = getRetardation(200, 150, 200, 150, 400, 300, sf, bc, rot);
     const scaledCenterRet = (centerRet / 1000) * scale;
@@ -1094,13 +1380,7 @@ export default function PolarizationScanner({ onBack }: { onBack: () => void }) 
       const rot = (rotationAngle * Math.PI) / 180;
       const scale = retardationScale;
 
-      let getRetardation: typeof diskCompressionRetardation;
-      switch (pattern) {
-        case "disk": getRetardation = diskCompressionRetardation; break;
-        case "plate": getRetardation = plateTensionRetardation; break;
-        case "beam": getRetardation = beamBendingRetardation; break;
-        case "residual": getRetardation = residualStressRetardation; break;
-      }
+      const getRetardation = PATTERN_GENERATORS[pattern];
 
       const ret = getRetardation(canvasX, canvasY, 200, 150, 400, 300, sf, bc, rot);
       const scaledRet = (ret / 1000) * scale;
@@ -1264,13 +1544,7 @@ export default function PolarizationScanner({ onBack }: { onBack: () => void }) 
     const rot = (rotationAngle * Math.PI) / 180;
     const scale = retardationScale;
 
-    let getRetardation: typeof diskCompressionRetardation;
-    switch (pattern) {
-      case "disk": getRetardation = diskCompressionRetardation; break;
-      case "plate": getRetardation = plateTensionRetardation; break;
-      case "beam": getRetardation = beamBendingRetardation; break;
-      case "residual": getRetardation = residualStressRetardation; break;
-    }
+    const getRetardation = PATTERN_GENERATORS[pattern];
 
     const baseRet = getRetardation(200, 150, 200, 150, 400, 300, sf, bc, rot);
     const scaledRet = (baseRet / 1000) * scale;
@@ -1291,15 +1565,44 @@ export default function PolarizationScanner({ onBack }: { onBack: () => void }) 
       sumW2 += d.weight * d.weight;
     }
     const slope = (n * sumWR - sumW * sumR) / (n * sumW2 - sumW * sumW);
-    // slope = nm/g, convert to Brewster
-    // σ = (m·g)/(b·d), b=10mm, d=5mm
-    // ΔR = C·σ·d → C = ΔR/(σ·d) = slope·g/(b) [per gram → per Pa]
-    // slope (nm/g) → ΔR/Δm = slope nm/g
-    // Δσ/Δm = g/(b·d) = 9.8/(0.01·0.005) = 196000 Pa/g
-    // C = slope·1e-9 / (196000 · 0.005) Brewster
-    const C_brewster = (slope * 1e-9) / (196000 * 0.005);
-    return C_brewster * 1e12; // in Brewster (10⁻¹² Pa⁻¹)
-  }, [stressData]);
+    const intercept = (sumR - slope * sumW) / n;
+    // slope = nm/g, convert to Brewster using configurable geometry
+    // Δσ/Δm = g / (b·d), where b=sampleWidth(mm), d=sampleThickness(mm)
+    const b_m = sampleWidth * 1e-3; // convert mm → m
+    const d_m = sampleThickness * 1e-3;
+    const dSigmaPerGram = 9.8 / (b_m * d_m); // Pa per gram
+    // C = ΔR / (σ·d) = (slope·1e-9) / (dSigmaPerGram · d_m) in Pa⁻¹
+    const C_brewster = (slope * 1e-9) / (dSigmaPerGram * d_m);
+    return {
+      C: C_brewster * 1e12, // in Brewster (10⁻¹² Pa⁻¹)
+      slope,
+      intercept,
+    };
+  }, [stressData, sampleWidth, sampleThickness]);
+
+  /* ─── Compute R² (coefficient of determination) for the linear fit ─── */
+  const fitR2 = useMemo(() => {
+    if (stressData.length < 2 || !photoelasticConstant) return null;
+    const n = stressData.length;
+    const meanR = stressData.reduce((s, d) => s + d.retardation, 0) / n;
+    let ssTot = 0, ssRes = 0;
+    for (const d of stressData) {
+      const predicted = photoelasticConstant.slope * d.weight + photoelasticConstant.intercept;
+      ssTot += (d.retardation - meanR) ** 2;
+      ssRes += (d.retardation - predicted) ** 2;
+    }
+    if (ssTot === 0) return null;
+    return 1 - ssRes / ssTot;
+  }, [stressData, photoelasticConstant]);
+
+  /* ─── Compare fitted C with material reference ─── */
+  const materialComparison = useMemo(() => {
+    if (!photoelasticConstant || material === "custom") return null;
+    const refC = MATERIAL_C[material];
+    const measured = photoelasticConstant.C;
+    const diff = ((measured - refC) / refC) * 100;
+    return { refC, measured, diff };
+  }, [photoelasticConstant, material]);
 
   /* ─── Record stress data point ─── */
   const recordStressDataPoint = useCallback(() => {
@@ -1308,6 +1611,30 @@ export default function PolarizationScanner({ onBack }: { onBack: () => void }) 
       { weight, retardation: currentCenterRetardation },
     ]);
   }, [weight, currentCenterRetardation]);
+
+  /* ─── Keyboard shortcuts (1-4 tabs, R record, C clear, Space camera) ─── */
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) return;
+
+      if (e.key === "1" && !streaming) setExperimentMode("demo");
+      else if (e.key === "2" && !streaming) setExperimentMode("quantitative");
+      else if (e.key === "3" && !streaming) setExperimentMode("teaching");
+      else if (e.key === "4" && !streaming) setExperimentMode("3d");
+      else if ((e.key === "r" || e.key === "R") && !streaming && experimentMode === "quantitative") {
+        recordStressDataPoint();
+      } else if ((e.key === "c" || e.key === "C") && !streaming && experimentMode === "quantitative") {
+        setStressData([]);
+      } else if (e.code === "Space") {
+        e.preventDefault();
+        if (streaming) stopCamera();
+        else startCamera();
+      }
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [streaming, experimentMode, recordStressDataPoint, startCamera, stopCamera]);
 
   /* ─── Teaching library pattern generators (memoized) ─── */
   const teachingGen1 = useMemo(
@@ -1326,14 +1653,19 @@ export default function PolarizationScanner({ onBack }: { onBack: () => void }) 
   /* ─── Section header style ─── */
   const sectionHeaderClass =
     "text-[10px] font-semibold text-[#6b7280] uppercase tracking-wider mb-2.5";
-  const sectionHeaderStyle = { fontFamily: "var(--font-ibm-plex-mono)" };
+  const sectionHeaderStyle = { fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" };
 
   return (
     <div className="flex flex-col h-full" style={{ background: "#FFFFFF" }}>
       {/* ─── Header ─── */}
       <div
-        className="flex-shrink-0 flex items-center h-12 border-b border-[#d4d8e0] px-6"
-        style={{ background: "#FFFFFF" }}
+        className="flex-shrink-0 flex items-center border-b border-[#d4d8e0]"
+        style={{
+          background: "#FFFFFF",
+          height: isMobile ? "44px" : "48px",
+          paddingLeft: isMobile ? "16px" : "24px",
+          paddingRight: isMobile ? "12px" : "24px",
+        }}
       >
         <button
           onClick={onBack}
@@ -1342,18 +1674,32 @@ export default function PolarizationScanner({ onBack }: { onBack: () => void }) 
           ← 返回
         </button>
         <span className="mx-3 text-[#d4d8e0]">|</span>
-        <h1 className="text-[18px] font-semibold text-[#2d3142] m-0">偏振视觉扫描仪</h1>
+        <h1
+          className="font-semibold text-[#2d3142] m-0"
+          style={{ fontSize: isMobile ? "17px" : "18px" }}
+        >
+          偏振视觉扫描仪
+        </h1>
         {!streaming && (
           <span className="ml-3 text-[10px] text-[#9ca3af] bg-[#f0f3f6] px-2 py-0.5 rounded border border-[#e8ecf0]">
-            演示模式
+            {experimentMode === "demo" && "演示模式"}
+            {experimentMode === "quantitative" && "定量测量"}
+            {experimentMode === "teaching" && "教学库"}
+            {experimentMode === "3d" && "3D应力图"}
           </span>
         )}
+        <MobilePanelToggle onClick={() => setPanelOpen(true)} label="参数" />
       </div>
 
       {/* ─── Main Content ─── */}
       <div className="flex flex-1 min-h-0">
         {/* ─── Left Control Panel ─── */}
-        <div className="w-72 border-r border-[#d4d8e0] bg-[#f8f9fb] p-4 overflow-y-auto shrink-0 custom-scrollbar">
+        <ControlPanel
+          open={panelOpen}
+          onClose={() => setPanelOpen(false)}
+          title="偏振视觉扫描仪参数"
+          desktopWidth="w-72"
+        >
           <div className="space-y-4">
             {/* Camera Control */}
             <div>
@@ -1459,14 +1805,14 @@ export default function PolarizationScanner({ onBack }: { onBack: () => void }) 
                 <h3 className={sectionHeaderClass} style={sectionHeaderStyle}>
                   演示模式
                 </h3>
-                <div className="grid grid-cols-2 gap-1.5 mb-3">
+                <div className="grid grid-cols-3 gap-1 mb-3">
                   {(Object.keys(DEMO_PATTERN_LABELS) as DemoPattern[]).map((key) => (
                     <Button
                       key={key}
                       variant="outline"
                       size="sm"
                       onClick={() => setDemoPattern(key)}
-                      className={`h-7 text-[10px] px-2 ${
+                      className={`h-8 text-[9px] px-1 ${
                         demoPattern === key
                           ? "bg-[#2d3142] text-white border-[#2d3142] hover:bg-[#3d4152] hover:text-white"
                           : "bg-white text-[#6b7280] border-[#d4d8e0] hover:bg-[#f0f1f3]"
@@ -1606,6 +1952,58 @@ export default function PolarizationScanner({ onBack }: { onBack: () => void }) 
                 <h3 className={sectionHeaderClass} style={sectionHeaderStyle}>
                   定量测量
                 </h3>
+
+                {/* Sample material selector */}
+                <div className="space-y-1.5 mb-2">
+                  <Label className="text-[11px] text-[#2d3142]">样品材料</Label>
+                  <Select
+                    value={material}
+                    onValueChange={(v) => setMaterial(v as Material)}
+                  >
+                    <SelectTrigger className="w-full h-8 text-[11px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(Object.keys(MATERIAL_LABELS) as Material[]).map((key) => (
+                        <SelectItem key={key} value={key} className="text-[11px]">
+                          {MATERIAL_LABELS[key]}
+                          {key !== "custom" && ` (C=${MATERIAL_C[key].toFixed(1)} Br)`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Sample geometry sliders */}
+                <div className="grid grid-cols-2 gap-2 mb-3">
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-[10px] text-[#2d3142]">宽度 b</Label>
+                      <span className="text-[10px] text-[#6b7280] tabular-nums">{sampleWidth}mm</span>
+                    </div>
+                    <Slider
+                      value={[sampleWidth]}
+                      onValueChange={([v]) => setSampleWidth(v)}
+                      min={2}
+                      max={30}
+                      step={1}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-[10px] text-[#2d3142]">厚度 d</Label>
+                      <span className="text-[10px] text-[#6b7280] tabular-nums">{sampleThickness}mm</span>
+                    </div>
+                    <Slider
+                      value={[sampleThickness]}
+                      onValueChange={([v]) => setSampleThickness(v)}
+                      min={1}
+                      max={20}
+                      step={0.5}
+                    />
+                  </div>
+                </div>
+
                 <div className="space-y-1.5 mb-3">
                   <div className="flex items-center justify-between">
                     <Label className="text-[12px] text-[#2d3142]">虚拟载荷</Label>
@@ -1644,16 +2042,59 @@ export default function PolarizationScanner({ onBack }: { onBack: () => void }) 
                   >
                     清除
                   </Button>
+                  <Button
+                    onClick={() => {
+                      if (stressData.length === 0) return;
+                      const csv = "weight_g,retardation_nm\n" +
+                        stressData.map((d) => `${d.weight},${d.retardation.toFixed(2)}`).join("\n");
+                      const blob = new Blob([csv], { type: "text/csv" });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement("a");
+                      a.href = url;
+                      a.download = `stress-data-${Date.now()}.csv`;
+                      a.click();
+                      URL.revokeObjectURL(url);
+                    }}
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-[10px] px-2"
+                    disabled={stressData.length === 0}
+                  >
+                    CSV
+                  </Button>
                 </div>
                 {photoelasticConstant !== null && (
                   <div className="bg-white border border-[#d4d8e0] rounded p-2">
                     <div className="text-[9px] text-[#9ca3af]">光弹性常数 C</div>
                     <div className="text-[13px] text-[#2d3142] font-semibold tabular-nums">
-                      {photoelasticConstant.toFixed(2)} Brewster
+                      {photoelasticConstant.C.toFixed(2)} Brewster
                     </div>
                     <div className="text-[8px] text-[#9ca3af] mt-1">
-                      C = ΔR/(σ·d), 样品 b=10mm, d=5mm
+                      C = ΔR/(σ·d), 样品 b={sampleWidth}mm, d={sampleThickness}mm
                     </div>
+                    {fitR2 !== null && (
+                      <div className="mt-1.5 flex items-center justify-between border-t border-[#e8ecf0] pt-1.5">
+                        <span className="text-[8px] text-[#9ca3af]">拟合 R²</span>
+                        <span className={`text-[10px] font-semibold tabular-nums ${
+                          fitR2 > 0.95 ? "text-[#16a34a]" : fitR2 > 0.8 ? "text-[#ca8a04]" : "text-[#dc2626]"
+                        }`}>
+                          {fitR2.toFixed(4)}
+                        </span>
+                      </div>
+                    )}
+                    {materialComparison && (
+                      <div className="mt-1.5 border-t border-[#e8ecf0] pt-1.5">
+                        <div className="text-[8px] text-[#9ca3af]">材料对比</div>
+                        <div className="text-[9px] text-[#6b7280] tabular-nums mt-0.5">
+                          测量 {materialComparison.measured.toFixed(2)} vs 参考 {materialComparison.refC.toFixed(1)} Br
+                        </div>
+                        <div className={`text-[9px] font-semibold tabular-nums ${
+                          Math.abs(materialComparison.diff) < 10 ? "text-[#16a34a]" : "text-[#dc2626]"
+                        }`}>
+                          偏差 {materialComparison.diff > 0 ? "+" : ""}{materialComparison.diff.toFixed(1)}%
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
                 <p className="text-[8px] text-[#9ca3af] mt-2">
@@ -1722,37 +2163,65 @@ export default function PolarizationScanner({ onBack }: { onBack: () => void }) 
               <h3 className={sectionHeaderClass} style={sectionHeaderStyle}>
                 推荐样品
               </h3>
-              <div className="grid grid-cols-2 gap-1.5">
+              <div className="grid grid-cols-3 gap-1.5">
                 {[
-                  { name: "透明塑料", icon: "□" },
-                  { name: "胶带", icon: "▬" },
-                  { name: "水果表皮", icon: "○" },
-                  { name: "眼镜片", icon: "◇" },
-                  { name: "CD盒", icon: "▢" },
-                  { name: "冰块", icon: "△" },
+                  { name: "透明塑料", path: "M3 5h18v14H3z M3 9h18 M7 5v14" },
+                  { name: "胶带", path: "M4 6h16v4H4z M6 10v8h12v-8" },
+                  { name: "水果表皮", path: "M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16z M12 4v16" },
+                  { name: "眼镜片", path: "M2 10c4-2 6-2 10 0s6 2 10 0 M2 10v4c4 2 6 2 10 0s6-2 10 0v-4" },
+                  { name: "CD盒", path: "M4 5h16v14H4z M8 9h8v6H8z" },
+                  { name: "冰块", path: "M6 6l12 12 M18 6L6 18 M12 4v16 M4 12h16" },
                 ].map((item) => (
                   <div
                     key={item.name}
-                    className="bg-white border border-[#d4d8e0] rounded px-2 py-1.5 text-center"
+                    className="bg-white border border-[#d4d8e0] rounded px-1.5 py-2 text-center hover:border-[#9ca3af] transition-colors"
                   >
-                    <span className="text-[14px] text-[#9ca3af]">{item.icon}</span>
-                    <p className="text-[9px] text-[#6b7280] mt-0.5">{item.name}</p>
+                    <svg width="20" height="20" viewBox="0 0 24 24" className="mx-auto" fill="none" stroke="#9ca3af" strokeWidth="1.2">
+                      <path d={item.path} />
+                    </svg>
+                    <p className="text-[9px] text-[#6b7280] mt-1">{item.name}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Keyboard shortcuts hint */}
+            <div className="border-t border-[#d4d8e0] pt-3">
+              <h3 className={sectionHeaderClass} style={sectionHeaderStyle}>
+                键盘快捷键
+              </h3>
+              <div className="bg-white border border-[#d4d8e0] rounded p-2 space-y-1">
+                {[
+                  { key: "1-4", desc: "切换实验模式" },
+                  { key: "R", desc: "记录数据点" },
+                  { key: "C", desc: "清除数据" },
+                  { key: "Space", desc: "启停摄像头" },
+                ].map((item) => (
+                  <div key={item.key} className="flex items-center justify-between">
+                    <kbd className="text-[8px] font-mono bg-[#f0f3f6] border border-[#d4d8e0] rounded px-1.5 py-0.5 text-[#2d3142]">
+                      {item.key}
+                    </kbd>
+                    <span className="text-[9px] text-[#9ca3af]">{item.desc}</span>
                   </div>
                 ))}
               </div>
             </div>
           </div>
-        </div>
+        </ControlPanel>
 
         {/* ─── Right Visualization Area ─── */}
-        <div className="flex-1 flex flex-col items-center p-6 bg-white overflow-y-auto custom-scrollbar">
+        <div className="flex-1 min-w-0 flex flex-col items-center bg-white overflow-y-auto custom-scrollbar" style={{ padding: isMobile ? "12px" : "24px" }}>
           {/* Hidden video element */}
           <video ref={videoRef} className="hidden" playsInline muted />
 
           {!streaming ? (
             <div className="w-full max-w-[700px]">
               {/* ─── Experiment Mode Tabs ─── */}
-              <div className="flex gap-1 mb-4 border-b border-[#d4d8e0] pb-0">
+              <div
+                className={`flex gap-1 mb-4 border-b border-[#d4d8e0] pb-0 ${
+                  isMobile ? "overflow-x-auto mobile-x-scroll" : ""
+                }`}
+              >
                 {([
                   { id: "demo" as const, label: "演示模式" },
                   { id: "quantitative" as const, label: "定量测量" },
@@ -1765,12 +2234,12 @@ export default function PolarizationScanner({ onBack }: { onBack: () => void }) 
                       setExperimentMode(tab.id);
                       setClickPoint(null);
                     }}
-                    className={`px-4 py-2 text-[12px] border-b-2 transition-colors bg-transparent cursor-pointer ${
+                    className={`px-4 py-2 text-[12px] border-b-2 transition-colors bg-transparent cursor-pointer whitespace-nowrap ${
                       experimentMode === tab.id
                         ? "border-[#2d3142] text-[#2d3142] font-semibold"
                         : "border-transparent text-[#9ca3af] hover:text-[#6b7280]"
                     }`}
-                    style={{ fontFamily: "var(--font-ibm-plex-sans)" }}
+                    style={{ fontFamily: "system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif" }}
                   >
                     {tab.label}
                   </button>
@@ -1894,7 +2363,7 @@ export default function PolarizationScanner({ onBack }: { onBack: () => void }) 
                   <div className="mt-2">
                     <div
                       className="text-[9px] text-[#9ca3af] text-center mb-1"
-                      style={{ fontFamily: "var(--font-ibm-plex-mono)" }}
+                      style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}
                     >
                       Michel-Lévy 干涉色参考
                     </div>
@@ -1923,7 +2392,7 @@ export default function PolarizationScanner({ onBack }: { onBack: () => void }) 
                   <div className="w-full max-w-[400px]">
                     <div
                       className="text-[9px] text-[#9ca3af] text-center mb-1"
-                      style={{ fontFamily: "var(--font-ibm-plex-mono)" }}
+                      style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}
                     >
                       载荷-延迟量关系
                     </div>
@@ -1936,11 +2405,11 @@ export default function PolarizationScanner({ onBack }: { onBack: () => void }) 
 
                   {/* Data summary */}
                   <div className="bg-white border border-[#d4d8e0] rounded p-3 w-full max-w-[400px]">
-                    <div className="text-[10px] text-[#6b7280] mb-2" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>
+                    <div className="text-[10px] text-[#6b7280] mb-2" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>
                       测量数据
                     </div>
                     {stressData.length > 0 ? (
-                      <div className="max-h-32 overflow-y-auto custom-scrollbar">
+                      <div className="max-h-32 overflow-y-auto overflow-x-auto custom-scrollbar mobile-x-scroll">
                         <table className="w-full text-[10px]">
                           <thead>
                             <tr className="border-b border-[#d4d8e0]">
@@ -1983,7 +2452,7 @@ export default function PolarizationScanner({ onBack }: { onBack: () => void }) 
                   <div className="mt-4 bg-white border border-[#d4d8e0] rounded p-3">
                     <div
                       className="text-[10px] text-[#6b7280] mb-2"
-                      style={{ fontFamily: "var(--font-ibm-plex-mono)" }}
+                      style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}
                     >
                       当前参数
                     </div>
@@ -2074,9 +2543,59 @@ export default function PolarizationScanner({ onBack }: { onBack: () => void }) 
                     </div>
                   </div>
 
+                  {/* Interactive isoclinic scan demo */}
+                  <div className="mt-6 bg-white border border-[#d4d8e0] rounded p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="text-[11px] font-semibold text-[#2d3142]" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>
+                        交互式等倾线扫描 — 圆盘对径受压
+                      </h4>
+                      <Button
+                        onClick={() => setIsoclinicPlaying((p) => !p)}
+                        variant="outline"
+                        size="sm"
+                        className="h-6 text-[9px] px-2"
+                      >
+                        {isoclinicPlaying ? "暂停" : "播放扫描"}
+                      </Button>
+                    </div>
+                    <div className="flex flex-col md:flex-row gap-4 items-center">
+                      <IsoclinicScanCanvas polarizerAngle={isoclinicAngle} width={220} height={180} />
+                      <div className="flex-1 space-y-2 min-w-0">
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between">
+                            <Label className="text-[11px] text-[#2d3142]">偏光镜角度</Label>
+                            <span className="text-[11px] text-[#6b7280] tabular-nums">{isoclinicAngle}°</span>
+                          </div>
+                          <Slider
+                            value={[isoclinicAngle]}
+                            onValueChange={([v]) => setIsoclinicAngle(v)}
+                            min={0}
+                            max={170}
+                            step={5}
+                          />
+                        </div>
+                        <p className="text-[9px] text-[#9ca3af] leading-relaxed">
+                          旋转正交偏光镜组时，等倾线(暗带)随之扫过样品——这是区分等倾线与等色线的关键：
+                          等色线(彩色环)随载荷变化而<strong className="text-[#6b7280]">不</strong>随偏光镜旋转移动；
+                          等倾线(暗带)则随偏光镜旋转而扫过。
+                        </p>
+                        <div className="grid grid-cols-2 gap-2 pt-1">
+                          <div className="bg-[#f8f9fb] border border-[#e8ecf0] rounded px-2 py-1">
+                            <div className="text-[8px] text-[#9ca3af]">当前角度</div>
+                            <div className="text-[11px] text-[#2d3142] font-semibold tabular-nums">{isoclinicAngle}°</div>
+                          </div>
+                          <div className="bg-[#f8f9fb] border border-[#e8ecf0] rounded px-2 py-1">
+                            <div className="text-[8px] text-[#9ca3af]">扫描范围</div>
+                            <div className="text-[11px] text-[#2d3142] font-semibold tabular-nums">0° → 180°</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Theory reference */}
                   <div className="mt-6 bg-white border border-[#d4d8e0] rounded p-4">
-                    <h4 className="text-[11px] font-semibold text-[#2d3142] mb-2" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>
+                    <h4 className="text-[11px] font-semibold text-[#2d3142] mb-2" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>
                       光弹性基本原理
                     </h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -2101,12 +2620,18 @@ export default function PolarizationScanner({ onBack }: { onBack: () => void }) 
             </div>
           ) : (
             /* ─── Camera Active View ─── */
-            <div className="flex gap-6 items-start w-full justify-center">
+            <div
+              className={`w-full justify-center ${
+                isMobile
+                  ? "flex flex-col items-center gap-4"
+                  : "flex gap-6 items-start"
+              }`}
+            >
               {showOriginal && (
-                <div className="flex flex-col items-center">
+                <div className="flex flex-col items-center w-full">
                   <div
                     className="text-[10px] text-[#9ca3af] uppercase tracking-wider mb-2"
-                    style={{ fontFamily: "var(--font-ibm-plex-mono)" }}
+                    style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}
                   >
                     原始画面
                   </div>
@@ -2119,10 +2644,10 @@ export default function PolarizationScanner({ onBack }: { onBack: () => void }) 
               )}
 
               {showProcessed && (
-                <div className="flex flex-col items-center">
+                <div className="flex flex-col items-center w-full">
                   <div
                     className="text-[10px] text-[#9ca3af] uppercase tracking-wider mb-2"
-                    style={{ fontFamily: "var(--font-ibm-plex-mono)" }}
+                    style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}
                   >
                     应力双折射图案
                   </div>
@@ -2141,7 +2666,7 @@ export default function PolarizationScanner({ onBack }: { onBack: () => void }) 
             <div className="mt-4">
               <div
                 className="text-[9px] text-[#9ca3af] text-center mb-1"
-                style={{ fontFamily: "var(--font-ibm-plex-mono)" }}
+                style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}
               >
                 Michel-Lévy 干涉色参考
               </div>

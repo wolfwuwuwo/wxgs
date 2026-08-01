@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { blitImageData } from "@/lib/utils";
 import {
   propagateThroughChain,
   propagateThroughChainStepByStep,
@@ -41,6 +42,8 @@ import {
   stokesFromJones as stokesFromJonesCalc,
   wavePlate,
 } from "@/lib/optics/jones-matrix";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { ControlPanel, MobilePanelToggle } from "./shared/ControlPanel";
 
 // ─── Experiment Mode Type ────────────────────────────────────────────
 type ExperimentMode = 'basic' | 'babinet_soleil' | 'measurement' | 'depolarization' | 'microscope';
@@ -833,7 +836,7 @@ function ElementCard({
     <div className={`bg-white border rounded p-2.5 ${isFaraday ? "border-[#cc4444] bg-[#fff8f8]" : "border-[#d4d8e0]"}`}>
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-1.5">
-          <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${isFaraday ? "bg-[#fde8e8] text-[#cc4444]" : "bg-[#edf0f5] text-[#4a4a5a]"}`} style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>
+          <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${isFaraday ? "bg-[#fde8e8] text-[#cc4444]" : "bg-[#edf0f5] text-[#4a4a5a]"}`} style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>
             {info.symbol}
           </span>
           <span className="text-[12px] text-[#2d3142]">{info.name}</span>
@@ -844,14 +847,14 @@ function ElementCard({
       <div className="space-y-1">
         <div className="flex items-center justify-between">
           <span className="text-[10px] text-[#6b7280]">角度 θ</span>
-          <span className="text-[10px] text-[#6b7280]" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>{element.angle.toFixed(1)}°</span>
+          <span className="text-[10px] text-[#6b7280]" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>{element.angle.toFixed(1)}°</span>
         </div>
         <Slider value={[element.angle]} onValueChange={([v]) => onAngleChange(element.id, v)} min={-180} max={180} step={0.5} />
         {isWaveplate && (
           <>
             <div className="flex items-center justify-between mt-1">
               <span className="text-[10px] text-[#6b7280]">相位延迟 δ</span>
-              <span className="text-[10px] text-[#6b7280]" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>{(element.retardation ?? 90).toFixed(1)}°</span>
+              <span className="text-[10px] text-[#6b7280]" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>{(element.retardation ?? 90).toFixed(1)}°</span>
             </div>
             <Slider value={[element.retardation ?? 90]} onValueChange={([v]) => onRetardationChange(element.id, v)} min={0} max={360} step={1} />
           </>
@@ -865,7 +868,7 @@ function ElementCard({
 // ─── Chain Step Table ───────────────────────────────────────────────
 function ChainStepTable({ steps }: { steps: PropagationStep[] }) {
   return (
-    <div className="bg-white border border-[#d4d8e0] rounded overflow-hidden">
+    <div className="bg-white border border-[#d4d8e0] rounded overflow-x-auto mobile-x-scroll">
       <table className="w-full text-[10px]">
         <thead>
           <tr className="bg-[#f8f9fb] border-b border-[#d4d8e0]">
@@ -887,16 +890,16 @@ function ChainStepTable({ steps }: { steps: PropagationStep[] }) {
               <tr key={i} className={`${i % 2 === 0 ? "" : "bg-[#fafbfc]"} ${step.element?.type === "faraday" ? "bg-[#fff8f8]" : ""}`}>
                 <td className="px-1.5 py-1 text-[#1a1a2e]">{step.stepIndex === -1 ? "入射" : `${step.stepIndex + 1}`}</td>
                 <td className="px-1.5 py-1 text-[#2d3142]">{elemInfo ? <span className={step.element!.type === "faraday" ? "text-[#cc4444]" : ""}>{elemInfo.symbol} {step.element!.angle.toFixed(1)}°</span> : "—"}</td>
-                <td className="px-1.5 py-1 text-[#4a4a5a]" style={{ fontFamily: "var(--font-ibm-plex-mono)", fontSize: "8px" }}>[{fmtComplex(step.jones[0], 2)}, {fmtComplex(step.jones[1], 2)}]</td>
-                <td className="px-1.5 py-1 text-right" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>{step.stokes[1].toFixed(3)}</td>
-                <td className="px-1.5 py-1 text-right" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>{step.stokes[2].toFixed(3)}</td>
-                <td className="px-1.5 py-1 text-right" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>{step.stokes[3].toFixed(3)}</td>
+                <td className="px-1.5 py-1 text-[#4a4a5a]" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace", fontSize: "8px" }}>[{fmtComplex(step.jones[0], 2)}, {fmtComplex(step.jones[1], 2)}]</td>
+                <td className="px-1.5 py-1 text-right" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>{step.stokes[1].toFixed(3)}</td>
+                <td className="px-1.5 py-1 text-right" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>{step.stokes[2].toFixed(3)}</td>
+                <td className="px-1.5 py-1 text-right" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>{step.stokes[3].toFixed(3)}</td>
                 <td className="px-1.5 py-1">
                   <div className="flex items-center gap-1">
                     <div className="w-12 h-2 bg-[#edf0f5] rounded overflow-hidden">
                       <div className="h-full rounded" style={{ width: `${Math.min(step.dop * 100, 100)}%`, backgroundColor: step.dop > 0.99 ? "#008800" : step.dop > 0.9 ? "#44aa44" : "#e8a838" }} />
                     </div>
-                    <span className="text-right w-8" style={{ fontFamily: "var(--font-ibm-plex-mono)", color: step.dop > 0.99 ? "#008800" : "#1a1a2e" }}>{step.dop.toFixed(2)}</span>
+                    <span className="text-right w-8" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace", color: step.dop > 0.99 ? "#008800" : "#1a1a2e" }}>{step.dop.toFixed(2)}</span>
                   </div>
                 </td>
                 <td className="px-1.5 py-1 text-[9px] text-[#6b7280]">{polType}</td>
@@ -929,14 +932,14 @@ function FaradayDemo({ inputJones, elements }: { inputJones: JonesVec2; elements
       <div className="grid grid-cols-2 gap-2">
         <div className="bg-white border border-[#f0d0d0] rounded p-2">
           <div className="text-[9px] text-[#6b7280] mb-1">正向传播 →</div>
-          <div className="text-[10px] text-[#1a1a2e]" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>ψ = {(forwardAnalysis.psi * 180 / Math.PI).toFixed(1)}°</div>
-          <div className="text-[10px] text-[#1a1a2e]" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>χ = {(forwardAnalysis.chi * 180 / Math.PI).toFixed(1)}°</div>
+          <div className="text-[10px] text-[#1a1a2e]" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>ψ = {(forwardAnalysis.psi * 180 / Math.PI).toFixed(1)}°</div>
+          <div className="text-[10px] text-[#1a1a2e]" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>χ = {(forwardAnalysis.chi * 180 / Math.PI).toFixed(1)}°</div>
           <div className="text-[9px] text-[#6b7280]">{getPolTypeName(forwardAnalysis.chi, forwardAnalysis.handedness)}</div>
         </div>
         <div className="bg-white border border-[#f0d0d0] rounded p-2">
           <div className="text-[9px] text-[#6b7280] mb-1">← 反向传播</div>
-          <div className="text-[10px] text-[#1a1a2e]" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>ψ = {(reverseAnalysis.psi * 180 / Math.PI).toFixed(1)}°</div>
-          <div className="text-[10px] text-[#1a1a2e]" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>χ = {(reverseAnalysis.chi * 180 / Math.PI).toFixed(1)}°</div>
+          <div className="text-[10px] text-[#1a1a2e]" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>ψ = {(reverseAnalysis.psi * 180 / Math.PI).toFixed(1)}°</div>
+          <div className="text-[10px] text-[#1a1a2e]" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>χ = {(reverseAnalysis.chi * 180 / Math.PI).toFixed(1)}°</div>
           <div className="text-[9px] text-[#6b7280]">{getPolTypeName(reverseAnalysis.chi, reverseAnalysis.handedness)}</div>
         </div>
       </div>
@@ -951,7 +954,7 @@ function JonesMatrixDisplay({ elements }: { elements: OpticalElement[] }) {
   if (elements.length === 0) return null;
   return (
     <div className="bg-white border border-[#d4d8e0] rounded p-2.5 space-y-2">
-      <div className="text-[10px] text-[#6b7280] uppercase tracking-wider font-medium" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>琼斯矩阵链</div>
+      <div className="text-[10px] text-[#6b7280] uppercase tracking-wider font-medium" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>琼斯矩阵链</div>
       <div className="space-y-1.5">
         {elements.map((elem) => {
           const M = getElementMatrix(elem);
@@ -962,7 +965,7 @@ function JonesMatrixDisplay({ elements }: { elements: OpticalElement[] }) {
                 <span className={`font-mono px-1 rounded ${elem.type === "faraday" ? "bg-[#fde8e8] text-[#cc4444]" : "bg-[#edf0f5] text-[#4a4a5a]"}`}>{info.symbol}</span>
                 <span className="text-[9px] text-[#4a4a5a]">{elem.angle.toFixed(1)}°</span>
               </div>
-              <div style={{ fontFamily: "var(--font-ibm-plex-mono)" }} className="text-[#4a4a5a]">
+              <div style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }} className="text-[#4a4a5a]">
                 <div>[{fmtComplex(M[0][0], 3)}, {fmtComplex(M[0][1], 3)}]</div>
                 <div>[{fmtComplex(M[1][0], 3)}, {fmtComplex(M[1][1], 3)}]</div>
               </div>
@@ -990,7 +993,8 @@ function AnimationTimeProvider({ children }: { children: (time: number) => React
 // ═══════════════════════════════════════════════════════════════════
 // MODE 1: Babinet-Soleil Compensator (巴比涅-索里补偿器)
 // ═══════════════════════════════════════════════════════════════════
-function BabinetSoleilMode() {
+function BabinetSoleilMode({ panelOpen, onPanelClose }: { panelOpen: boolean; onPanelClose: () => void }) {
+  const isMobile = useIsMobile();
   const [bsAngle, setBsAngle] = useState(0);
   const [bsRetardation, setBsRetardation] = useState(0);
   const [inputState, setInputState] = useState<JonesVec2>(HLP);
@@ -1039,7 +1043,7 @@ function BabinetSoleilMode() {
   return (
     <div className="flex flex-1 min-h-0">
       {/* Left panel */}
-      <div className="w-80 flex-shrink-0 bg-[#f8f9fb] border-r border-[#d4d8e0] overflow-y-auto p-4 space-y-4 custom-scrollbar">
+      <ControlPanel open={panelOpen} onClose={onPanelClose} title="实验参数">
         <div className="text-[10px] text-[#6b7280] uppercase tracking-wider font-medium font-mono">Babinet-Soleil 补偿器</div>
 
         {/* BS parameters */}
@@ -1048,14 +1052,14 @@ function BabinetSoleilMode() {
           <div>
             <div className="flex justify-between mb-1">
               <span className="text-[10px] text-[#6b7280]">快轴角度</span>
-              <span className="text-[10px] text-[#6b7280] tabular-nums" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>{bsAngle.toFixed(1)}°</span>
+              <span className="text-[10px] text-[#6b7280] tabular-nums" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>{bsAngle.toFixed(1)}°</span>
             </div>
             <Slider value={[bsAngle]} onValueChange={([v]) => setBsAngle(v)} min={-90} max={90} step={0.5} />
           </div>
           <div>
             <div className="flex justify-between mb-1">
               <span className="text-[10px] text-[#6b7280]">总延迟量</span>
-              <span className="text-[10px] text-[#6b7280] tabular-nums" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>{bsRetardation.toFixed(1)}°</span>
+              <span className="text-[10px] text-[#6b7280] tabular-nums" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>{bsRetardation.toFixed(1)}°</span>
             </div>
             <Slider value={[bsRetardation]} onValueChange={([v]) => setBsRetardation(v)} min={0} max={360} step={0.5} />
           </div>
@@ -1087,7 +1091,7 @@ function BabinetSoleilMode() {
             <div className="space-y-2 mt-2">
               <div className="flex items-center gap-2">
                 <div className={`w-3 h-3 rounded-full ${isExtinct ? "bg-[#008800]" : "bg-[#cc4444]"}`} />
-                <span className="text-[10px] tabular-nums" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>
+                <span className="text-[10px] tabular-nums" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>
                   出射光强: {outputIntensity.toFixed(4)}
                 </span>
               </div>
@@ -1109,15 +1113,15 @@ function BabinetSoleilMode() {
                 <div className="bg-[#f8f9fb] border border-[#d4d8e0] rounded p-2 space-y-1">
                   <div className="flex justify-between text-[10px]">
                     <span className="text-[#6b7280]">测量延迟</span>
-                    <span className="tabular-nums" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>{measuredRetardation.toFixed(1)}°</span>
+                    <span className="tabular-nums" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>{measuredRetardation.toFixed(1)}°</span>
                   </div>
                   <div className="flex justify-between text-[10px]">
                     <span className="text-[#6b7280]">实际延迟</span>
-                    <span className="tabular-nums" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>{mysteryRetardation.toFixed(1)}°</span>
+                    <span className="tabular-nums" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>{mysteryRetardation.toFixed(1)}°</span>
                   </div>
                   <div className="flex justify-between text-[10px]">
                     <span className="text-[#6b7280]">误差</span>
-                    <span className="tabular-nums" style={{ fontFamily: "var(--font-ibm-plex-mono)", color: "#cc4444" }}>
+                    <span className="tabular-nums" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace", color: "#cc4444" }}>
                       {Math.abs(measuredRetardation - mysteryRetardation).toFixed(1)}°
                     </span>
                   </div>
@@ -1131,15 +1135,15 @@ function BabinetSoleilMode() {
         <div className="bg-white border border-[#d4d8e0] rounded p-3 space-y-1 text-[10px]">
           <div className="text-[11px] font-semibold text-[#2d3142] mb-1">出射偏振态</div>
           <div className="flex justify-between"><span className="text-[#6b7280]">类型</span><span>{getPolTypeName(mysteryOutputPol.chi, mysteryOutputPol.handedness)}</span></div>
-          <div className="flex justify-between"><span className="text-[#6b7280]">ψ</span><span className="tabular-nums" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>{(mysteryOutputPol.psi * 180 / Math.PI).toFixed(1)}°</span></div>
-          <div className="flex justify-between"><span className="text-[#6b7280]">χ</span><span className="tabular-nums" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>{(mysteryOutputPol.chi * 180 / Math.PI).toFixed(1)}°</span></div>
+          <div className="flex justify-between"><span className="text-[#6b7280]">ψ</span><span className="tabular-nums" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>{(mysteryOutputPol.psi * 180 / Math.PI).toFixed(1)}°</span></div>
+          <div className="flex justify-between"><span className="text-[#6b7280]">χ</span><span className="tabular-nums" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>{(mysteryOutputPol.chi * 180 / Math.PI).toFixed(1)}°</span></div>
         </div>
-      </div>
+      </ControlPanel>
 
       {/* Right visualization */}
-      <div className="flex-1 flex items-center justify-center gap-6 p-6">
+      <div className={isMobile ? "flex-1 flex flex-col items-center justify-center gap-3 p-3" : "flex-1 flex items-center justify-center gap-6 p-6"}>
         <div className="flex flex-col items-center gap-2">
-          <PolarizationCanvas polarization={inputPol} jones={inputState} label="输入偏振态" size={200} showVector={true} showTrail={true} />
+          <PolarizationCanvas polarization={inputPol} jones={inputState} label="输入偏振态" size={isMobile ? 160 : 200} showVector={true} showTrail={true} />
           <span className="text-[10px] text-[#6b7280]">入射</span>
         </div>
         <div className="flex items-center gap-3">
@@ -1152,7 +1156,7 @@ function BabinetSoleilMode() {
           </svg>
         </div>
         <div className="flex flex-col items-center gap-2">
-          <PolarizationCanvas polarization={mysteryOutputPol} jones={mysteryOutputJones} label="输出偏振态" size={200} showVector={true} showTrail={true} />
+          <PolarizationCanvas polarization={mysteryOutputPol} jones={mysteryOutputJones} label="输出偏振态" size={isMobile ? 160 : 200} showVector={true} showTrail={true} />
           <span className="text-[10px] text-[#6b7280]">出射</span>
           {isExtinct && <span className="text-[10px] text-[#008800] font-medium">✓ 消光</span>}
         </div>
@@ -1164,7 +1168,8 @@ function BabinetSoleilMode() {
 // ═══════════════════════════════════════════════════════════════════
 // MODE 2: Polarization State Measurement (偏振态测量实验)
 // ═══════════════════════════════════════════════════════════════════
-function MeasurementMode() {
+function MeasurementMode({ panelOpen, onPanelClose }: { panelOpen: boolean; onPanelClose: () => void }) {
+  const isMobile = useIsMobile();
   // ─── Measurement record type ────────────────────────────────────
   interface MeasurementRecord {
     id: number;
@@ -1331,7 +1336,7 @@ function MeasurementMode() {
   return (
     <div className="flex flex-1 min-h-0">
       {/* Left panel */}
-      <div className="w-80 flex-shrink-0 bg-[#f8f9fb] border-r border-[#d4d8e0] overflow-y-auto p-4 space-y-4 custom-scrollbar">
+      <ControlPanel open={panelOpen} onClose={onPanelClose} title="实验参数">
         <div className="text-[10px] text-[#6b7280] uppercase tracking-wider font-medium font-mono">偏振态测量</div>
 
         {/* Target generation */}
@@ -1374,7 +1379,7 @@ function MeasurementMode() {
               <div>
                 <div className="flex justify-between mb-1">
                   <span className="text-[10px] text-[#6b7280]">偏振片角度</span>
-                  <span className="text-[10px] text-[#6b7280] tabular-nums" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>{polarizerAngle.toFixed(1)}°</span>
+                  <span className="text-[10px] text-[#6b7280] tabular-nums" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>{polarizerAngle.toFixed(1)}°</span>
                 </div>
                 <Slider value={[polarizerAngle]} onValueChange={([v]) => setPolarizerAngle(v)} min={0} max={180} step={0.5} />
               </div>
@@ -1386,7 +1391,7 @@ function MeasurementMode() {
                 <div>
                   <div className="flex justify-between mb-1">
                     <span className="text-[10px] text-[#6b7280]">1/4波片角度</span>
-                    <span className="text-[10px] text-[#6b7280] tabular-nums" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>{qwpAngle.toFixed(1)}°</span>
+                    <span className="text-[10px] text-[#6b7280] tabular-nums" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>{qwpAngle.toFixed(1)}°</span>
                   </div>
                   <Slider value={[qwpAngle]} onValueChange={([v]) => setQwpAngle(v)} min={-90} max={90} step={0.5} />
                 </div>
@@ -1400,7 +1405,7 @@ function MeasurementMode() {
                 <div className="flex-1 h-4 bg-[#edf0f5] rounded overflow-hidden">
                   <div className="h-full bg-[#cc4444] rounded transition-all" style={{ width: `${Math.min(intensity * 100, 100)}%` }} />
                 </div>
-                <span className="text-[10px] tabular-nums w-14 text-right" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>{intensity.toFixed(4)}</span>
+                <span className="text-[10px] tabular-nums w-14 text-right" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>{intensity.toFixed(4)}</span>
               </div>
               {isExtinct && <div className="text-[10px] text-[#008800] bg-[#f0fff0] rounded px-2 py-1 font-medium">✓ 消光</div>}
               <Button
@@ -1444,15 +1449,15 @@ function MeasurementMode() {
                         m.intensity < 0.02 ? "bg-[#008800]" : "bg-[#d4d8e0]"
                       }`} />
                       <span className="text-[#6b7280]">#{m.id}</span>
-                      <span style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>
+                      <span style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>
                         P:{m.polarizerAngle.toFixed(1)}°
                       </span>
                       {m.useQWP && (
-                        <span style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>
+                        <span style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>
                           Q:{m.qwpAngle!.toFixed(1)}°
                         </span>
                       )}
-                      <span className={`tabular-nums ml-auto ${m.intensity < 0.02 ? "text-[#008800]" : "text-[#6b7280]"}`} style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>
+                      <span className={`tabular-nums ml-auto ${m.intensity < 0.02 ? "text-[#008800]" : "text-[#6b7280]"}`} style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>
                         {m.intensity.toFixed(4)}
                       </span>
                     </div>
@@ -1465,7 +1470,7 @@ function MeasurementMode() {
             {measuredStokes ? (
               <div className="bg-white border border-[#d4d8e0] rounded p-3 space-y-2">
                 <div className="text-[11px] font-semibold text-[#2d3142]">测量结果对比</div>
-                <div className="border border-[#d4d8e0] rounded overflow-hidden">
+                <div className="border border-[#d4d8e0] rounded overflow-x-auto mobile-x-scroll">
                   <table className="w-full text-[9px]">
                     <thead>
                       <tr className="bg-[#f8f9fb] border-b border-[#d4d8e0]">
@@ -1486,9 +1491,9 @@ function MeasurementMode() {
                         return (
                           <tr key={label} className="border-b border-[#edf0f5] last:border-b-0">
                             <td className="px-2 py-1 text-[#2d3142] font-medium">{label}</td>
-                            <td className="px-2 py-1 text-right tabular-nums" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>{target.toFixed(3)}</td>
-                            <td className="px-2 py-1 text-right tabular-nums" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>{measured.toFixed(3)}</td>
-                            <td className="px-2 py-1 text-right tabular-nums" style={{ fontFamily: "var(--font-ibm-plex-mono)", color: errorColor }}>{error.toFixed(3)}</td>
+                            <td className="px-2 py-1 text-right tabular-nums" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>{target.toFixed(3)}</td>
+                            <td className="px-2 py-1 text-right tabular-nums" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>{measured.toFixed(3)}</td>
+                            <td className="px-2 py-1 text-right tabular-nums" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace", color: errorColor }}>{error.toFixed(3)}</td>
                           </tr>
                         );
                       })}
@@ -1510,7 +1515,7 @@ function MeasurementMode() {
                 <div className="text-[11px] font-semibold text-[#2d3142]">测量评分</div>
                 <div className="flex items-center gap-2">
                   <div className="text-[24px] font-bold tabular-nums" style={{
-                    fontFamily: "var(--font-ibm-plex-mono)",
+                    fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace",
                     color: scoreBreakdown.total > 85 ? "#008800" : scoreBreakdown.total > 60 ? "#e8a838" : "#cc4444"
                   }}>
                     {scoreBreakdown.total}
@@ -1528,7 +1533,7 @@ function MeasurementMode() {
                       <div className="flex items-center justify-between text-[9px]">
                         <span className="text-[#6b7280]">{label}</span>
                         <span className="tabular-nums" style={{
-                          fontFamily: "var(--font-ibm-plex-mono)",
+                          fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace",
                           color: score >= max * 0.8 ? "#008800" : score >= max * 0.5 ? "#e8a838" : "#cc4444"
                         }}>
                           {score}/{max}
@@ -1550,17 +1555,17 @@ function MeasurementMode() {
             )}
           </>
         )}
-      </div>
+      </ControlPanel>
 
       {/* Right visualization */}
-      <div className="flex-1 flex items-center justify-center p-6">
+      <div className={isMobile ? "flex-1 flex items-center justify-center p-3" : "flex-1 flex items-center justify-center p-6"}>
         {targetGenerated ? (
           <div className="flex flex-col items-center gap-3">
             <div className="text-[11px] text-[#6b7280]">未知偏振态（隐藏）</div>
             <div className="w-48 h-48 border border-[#d4d8e0] rounded bg-[#f8f9fb] flex items-center justify-center">
               <span className="text-[36px] text-[#d4d8e0]">?</span>
             </div>
-            <div className="text-[10px] text-[#6b7280] mt-2">
+            <div className={`text-[10px] text-[#6b7280] mt-2 text-center ${isMobile ? "max-w-[280px] px-2" : ""}`}>
               {guidanceStep === 1 && "调节偏振片寻找消光点，然后点击「记录测量点」"}
               {guidanceStep === 2 && "勾选「使用1/4波片」，调节波片和偏振片再次找消光"}
               {guidanceStep === 3 && "测量完成！查看左侧评分面板"}
@@ -1577,7 +1582,8 @@ function MeasurementMode() {
 // ═══════════════════════════════════════════════════════════════════
 // MODE 3: Depolarization Simulation (消偏振与退偏模拟)
 // ═══════════════════════════════════════════════════════════════════
-function DepolarizationMode() {
+function DepolarizationMode({ panelOpen, onPanelClose }: { panelOpen: boolean; onPanelClose: () => void }) {
+  const isMobile = useIsMobile();
   const [inputState, setInputState] = useState<JonesVec2>(LP45);
   const [concentration, setConcentration] = useState(0);
 
@@ -1621,7 +1627,7 @@ function DepolarizationMode() {
   return (
     <div className="flex flex-1 min-h-0">
       {/* Left panel */}
-      <div className="w-80 flex-shrink-0 bg-[#f8f9fb] border-r border-[#d4d8e0] overflow-y-auto p-4 space-y-4 custom-scrollbar">
+      <ControlPanel open={panelOpen} onClose={onPanelClose} title="实验参数">
         <div className="text-[10px] text-[#6b7280] uppercase tracking-wider font-medium font-mono">消偏振模拟</div>
 
         {/* Input state */}
@@ -1640,7 +1646,7 @@ function DepolarizationMode() {
           <div>
             <div className="flex justify-between mb-1">
               <span className="text-[10px] text-[#6b7280]">散射浓度</span>
-              <span className="text-[10px] text-[#6b7280] tabular-nums" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>{concentration.toFixed(0)}%</span>
+              <span className="text-[10px] text-[#6b7280] tabular-nums" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>{concentration.toFixed(0)}%</span>
             </div>
             <Slider value={[concentration]} onValueChange={([v]) => setConcentration(v)} min={0} max={100} step={1} />
           </div>
@@ -1652,13 +1658,13 @@ function DepolarizationMode() {
           <div className="text-[11px] font-semibold text-[#2d3142]">偏振度 DOP</div>
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 rounded-full border-2 flex items-center justify-center" style={{ borderColor: dopColor }}>
-              <span className="text-[14px] font-bold tabular-nums" style={{ fontFamily: "var(--font-ibm-plex-mono)", color: dopColor }}>
+              <span className="text-[14px] font-bold tabular-nums" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace", color: dopColor }}>
                 {(dop * 100).toFixed(0)}
               </span>
             </div>
             <div>
               <div className="text-[10px] font-medium" style={{ color: dopColor }}>{dopLabel}</div>
-              <div className="text-[10px] text-[#6b7280] tabular-nums" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>DOP = {dop.toFixed(4)}</div>
+              <div className="text-[10px] text-[#6b7280] tabular-nums" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>DOP = {dop.toFixed(4)}</div>
             </div>
           </div>
           <div className="h-2 bg-[#edf0f5] rounded overflow-hidden">
@@ -1672,7 +1678,7 @@ function DepolarizationMode() {
           {["S₀", "S₁", "S₂", "S₃"].map((label, i) => (
             <div key={label} className="flex justify-between">
               <span className="text-[#6b7280]">{label}</span>
-              <span className="tabular-nums" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>
+              <span className="tabular-nums" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>
                 {inputStokes[i].toFixed(3)} → {outputStokes[i].toFixed(3)}
               </span>
             </div>
@@ -1700,12 +1706,12 @@ function DepolarizationMode() {
             <circle cx={30 + concentration * 2.25} cy={85 - dop * 80} r="3" fill="#cc4444" />
           </svg>
         </div>
-      </div>
+      </ControlPanel>
 
       {/* Right visualization */}
-      <div className="flex-1 flex items-center justify-center gap-8 p-6">
+      <div className={isMobile ? "flex-1 flex flex-col items-center justify-center gap-3 p-3" : "flex-1 flex items-center justify-center gap-8 p-6"}>
         <div className="flex flex-col items-center gap-2">
-          <PolarizationCanvas polarization={inputPol} jones={inputState} label="输入偏振态" size={240} showVector={true} showTrail={true} />
+          <PolarizationCanvas polarization={inputPol} jones={inputState} label="输入偏振态" size={isMobile ? 180 : 240} showVector={true} showTrail={true} />
           <span className="text-[10px] text-[#6b7280]">入射 (DOP=1.00)</span>
         </div>
         <svg width="60" height="24" viewBox="0 0 60 24">
@@ -1716,7 +1722,7 @@ function DepolarizationMode() {
           <polygon points="52,8 60,12 52,16" fill="#9ca3af" />
         </svg>
         <div className="flex flex-col items-center gap-2">
-          <PolarizationCanvas polarization={outputPol} jones={outputJones} label="输出偏振态" size={240} showVector={true} showTrail={true} />
+          <PolarizationCanvas polarization={outputPol} jones={outputJones} label="输出偏振态" size={isMobile ? 180 : 240} showVector={true} showTrail={true} />
           <span className="text-[10px] tabular-nums" style={{ color: dopColor }}>出射 (DOP={dop.toFixed(2)})</span>
         </div>
       </div>
@@ -1727,7 +1733,8 @@ function DepolarizationMode() {
 // ═══════════════════════════════════════════════════════════════════
 // MODE 4: Convergent Polarization Interference (偏光显微镜模式)
 // ═══════════════════════════════════════════════════════════════════
-function MicroscopeMode() {
+function MicroscopeMode({ panelOpen, onPanelClose }: { panelOpen: boolean; onPanelClose: () => void }) {
+  const isMobile = useIsMobile();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animRef = useRef<number>(0);
   const [thickness, setThickness] = useState(0.03); // mm
@@ -1769,8 +1776,8 @@ function MicroscopeMode() {
 
       for (let py = 0; py < size; py++) {
         for (let px = 0; px < size; px++) {
-          const dx = px - cx;
-          const dy = py - cy;
+          const dx = px + 0.5 - cx;
+          const dy = py + 0.5 - cy;
           const r = Math.sqrt(dx * dx + dy * dy);
           const idx = (py * size + px) * 4;
 
@@ -1826,7 +1833,7 @@ function MicroscopeMode() {
         }
       }
 
-      ctx.putImageData(imageData, 0, 0);
+      blitImageData(ctx, imageData, size, size);
 
       // Draw aperture circle
       ctx.beginPath();
@@ -1851,7 +1858,7 @@ function MicroscopeMode() {
   return (
     <div className="flex flex-1 min-h-0">
       {/* Left panel */}
-      <div className="w-80 flex-shrink-0 bg-[#f8f9fb] border-r border-[#d4d8e0] overflow-y-auto p-4 space-y-4 custom-scrollbar">
+      <ControlPanel open={panelOpen} onClose={onPanelClose} title="实验参数">
         <div className="text-[10px] text-[#6b7280] uppercase tracking-wider font-medium font-mono">偏光显微镜</div>
 
         <div className="bg-white border border-[#d4d8e0] rounded p-3 space-y-3">
@@ -1859,28 +1866,28 @@ function MicroscopeMode() {
           <div>
             <div className="flex justify-between mb-1">
               <span className="text-[10px] text-[#6b7280]">晶体厚度</span>
-              <span className="text-[10px] text-[#6b7280] tabular-nums" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>{(thickness * 1000).toFixed(0)} μm</span>
+              <span className="text-[10px] text-[#6b7280] tabular-nums" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>{(thickness * 1000).toFixed(0)} μm</span>
             </div>
             <Slider value={[thickness * 1000]} onValueChange={([v]) => setThickness(v / 1000)} min={5} max={100} step={1} />
           </div>
           <div>
             <div className="flex justify-between mb-1">
               <span className="text-[10px] text-[#6b7280]">双折射率 Δn</span>
-              <span className="text-[10px] text-[#6b7280] tabular-nums" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>{birefringence.toFixed(4)}</span>
+              <span className="text-[10px] text-[#6b7280] tabular-nums" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>{birefringence.toFixed(4)}</span>
             </div>
             <Slider value={[birefringence * 10000]} onValueChange={([v]) => setBirefringence(v / 10000)} min={1} max={30} step={1} />
           </div>
           <div>
             <div className="flex justify-between mb-1">
               <span className="text-[10px] text-[#6b7280]">会聚角</span>
-              <span className="text-[10px] text-[#6b7280] tabular-nums" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>{convergenceAngle.toFixed(0)}°</span>
+              <span className="text-[10px] text-[#6b7280] tabular-nums" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>{convergenceAngle.toFixed(0)}°</span>
             </div>
             <Slider value={[convergenceAngle]} onValueChange={([v]) => setConvergenceAngle(v)} min={5} max={40} step={1} />
           </div>
           <div>
             <div className="flex justify-between mb-1">
               <span className="text-[10px] text-[#6b7280]">波长 λ</span>
-              <span className="text-[10px] text-[#6b7280] tabular-nums" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>{wavelength} nm</span>
+              <span className="text-[10px] text-[#6b7280] tabular-nums" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>{wavelength} nm</span>
             </div>
             <Slider value={[wavelength]} onValueChange={([v]) => setWavelength(v)} min={400} max={700} step={5} />
           </div>
@@ -1891,11 +1898,11 @@ function MicroscopeMode() {
           <div className="text-[11px] font-semibold text-[#2d3142] mb-1">中心延迟量</div>
           <div className="flex justify-between">
             <span className="text-[#6b7280]">δ (正入射)</span>
-            <span className="tabular-nums" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>{(birefringence * thickness * 1e6).toFixed(0)} nm</span>
+            <span className="tabular-nums" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>{(birefringence * thickness * 1e6).toFixed(0)} nm</span>
           </div>
           <div className="flex justify-between">
             <span className="text-[#6b7280]">δ / λ</span>
-            <span className="tabular-nums" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>{(birefringence * thickness * 1e6 / wavelength).toFixed(2)} λ</span>
+            <span className="tabular-nums" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>{(birefringence * thickness * 1e6 / wavelength).toFixed(2)} λ</span>
           </div>
         </div>
 
@@ -1924,12 +1931,12 @@ function MicroscopeMode() {
             <span>2000 nm</span>
           </div>
         </div>
-      </div>
+      </ControlPanel>
 
       {/* Right visualization */}
-      <div className="flex-1 flex items-center justify-center p-6">
+      <div className={isMobile ? "flex-1 flex items-center justify-center p-3" : "flex-1 flex items-center justify-center p-6"}>
         <div className="flex flex-col items-center gap-3">
-          <canvas ref={canvasRef} style={{ width: 400, height: 400 }} className="border border-[#d4d8e0] rounded" />
+          <canvas ref={canvasRef} style={{ width: isMobile ? "min(85vw, 400px)" : 400, height: isMobile ? "min(85vw, 400px)" : 400 }} className="border border-[#d4d8e0] rounded" />
           <div className="text-[10px] text-[#6b7280]">正交偏光镜下锥光干涉图</div>
         </div>
       </div>
@@ -1941,6 +1948,8 @@ function MicroscopeMode() {
 let nextElementId = 1;
 
 export default function JonesPolarizationLab({ onBack }: { onBack: () => void }) {
+  const isMobile = useIsMobile();
+  const [panelOpen, setPanelOpen] = useState(false);
   const [expMode, setExpMode] = useState<ExperimentMode>("basic");
 
   // Basic mode states
@@ -1995,9 +2004,9 @@ export default function JonesPolarizationLab({ onBack }: { onBack: () => void })
   return (
     <AnimationTimeProvider>
       {(animTime) => (
-        <div className="min-h-screen flex flex-col bg-[#FFFFFF]">
+        <div className="h-full flex flex-col bg-[#FFFFFF]">
           {/* Header */}
-          <div className="flex-shrink-0 flex items-center h-12 border-b border-[#d4d8e0] px-6">
+          <div className={`flex-shrink-0 flex items-center ${isMobile ? "h-11 px-4" : "h-12 px-6"} border-b border-[#d4d8e0]`}>
             <button
               onClick={onBack}
               className="text-[12px] font-normal text-[#555] hover:text-[#1a1a2e] transition-colors bg-transparent border-none cursor-pointer flex items-center gap-1"
@@ -2005,18 +2014,19 @@ export default function JonesPolarizationLab({ onBack }: { onBack: () => void })
               ← 返回
             </button>
             <span className="mx-3 text-[#d4d8e0]">|</span>
-            <h1 className="text-[20px] font-semibold text-[#1a1a2e] m-0">
+            <h1 className={`${isMobile ? "text-[17px]" : "text-[20px]"} font-semibold text-[#1a1a2e] m-0`}>
               偏振琼斯矩阵实验室
             </h1>
+            <MobilePanelToggle onClick={() => setPanelOpen(true)} label="参数" />
           </div>
 
           {/* Experiment Mode Tabs */}
-          <div className="flex-shrink-0 flex items-center gap-1 px-6 py-2 border-b border-[#d4d8e0] bg-[#f8f9fb]">
+          <div className={`flex-shrink-0 flex items-center gap-1 ${isMobile ? "px-3 py-2 overflow-x-auto mobile-x-scroll flex-nowrap" : "px-6 py-2"} border-b border-[#d4d8e0] bg-[#f8f9fb]`}>
             {EXP_MODE_TABS.map(({ key, label }) => (
               <button
                 key={key}
                 onClick={() => setExpMode(key)}
-                className={`text-[10px] px-3 py-1.5 rounded border transition-colors ${
+                className={`text-[10px] px-3 py-1.5 rounded border transition-colors flex-shrink-0 whitespace-nowrap ${
                   expMode === key
                     ? "bg-[#F0F3F6] text-[#333] border-[#333] font-medium"
                     : "bg-white text-[#6b7280] border-[#D0D0D0] hover:bg-[#F0F3F6]"
@@ -2031,7 +2041,7 @@ export default function JonesPolarizationLab({ onBack }: { onBack: () => void })
           {expMode === "basic" && (
             <div className="flex flex-1 min-h-0">
               {/* Left control panel */}
-              <div className="w-80 flex-shrink-0 bg-[#f8f9fb] border-r border-[#d4d8e0] overflow-y-auto p-4 space-y-4 custom-scrollbar">
+              <ControlPanel open={panelOpen} onClose={() => setPanelOpen(false)} title="实验参数">
                 {/* Input state selector */}
                 <div>
                   <div className="text-[12px] font-semibold text-[#1a1a2e] mb-2 pb-1.5 border-b border-[#d4d8e0]">输入偏振态</div>
@@ -2115,12 +2125,12 @@ export default function JonesPolarizationLab({ onBack }: { onBack: () => void })
                   <div className="text-[12px] font-semibold text-[#1a1a2e] mb-2 pb-1.5 border-b border-[#d4d8e0]">输出偏振态</div>
                   <div className="bg-white border border-[#d4d8e0] rounded p-2.5 space-y-1 text-[10px]">
                     <div className="flex justify-between"><span className="text-[#6b7280]">类型</span><span className="text-[#1a1a2e]">{getPolTypeName(outputPol.chi, outputPol.handedness)}</span></div>
-                    <div className="flex justify-between"><span className="text-[#6b7280]">方位角 ψ</span><span className="text-[#1a1a2e] tabular-nums" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>{(outputPol.psi * 180 / Math.PI).toFixed(1)}°</span></div>
-                    <div className="flex justify-between"><span className="text-[#6b7280]">椭圆率角 χ</span><span className="text-[#1a1a2e] tabular-nums" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>{(outputPol.chi * 180 / Math.PI).toFixed(1)}°</span></div>
-                    <div className="flex justify-between"><span className="text-[#6b7280]">DOP</span><span className="tabular-nums" style={{ fontFamily: "var(--font-ibm-plex-mono)", color: outputDOP > 0.99 ? "#008800" : "#1a1a2e" }}>{outputDOP.toFixed(4)}</span></div>
-                    <div className="flex justify-between"><span className="text-[#6b7280]">S₁</span><span className="tabular-nums" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>{outputStokes[1].toFixed(4)}</span></div>
-                    <div className="flex justify-between"><span className="text-[#6b7280]">S₂</span><span className="tabular-nums" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>{outputStokes[2].toFixed(4)}</span></div>
-                    <div className="flex justify-between"><span className="text-[#6b7280]">S₃</span><span className="tabular-nums" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>{outputStokes[3].toFixed(4)}</span></div>
+                    <div className="flex justify-between"><span className="text-[#6b7280]">方位角 ψ</span><span className="text-[#1a1a2e] tabular-nums" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>{(outputPol.psi * 180 / Math.PI).toFixed(1)}°</span></div>
+                    <div className="flex justify-between"><span className="text-[#6b7280]">椭圆率角 χ</span><span className="text-[#1a1a2e] tabular-nums" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>{(outputPol.chi * 180 / Math.PI).toFixed(1)}°</span></div>
+                    <div className="flex justify-between"><span className="text-[#6b7280]">DOP</span><span className="tabular-nums" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace", color: outputDOP > 0.99 ? "#008800" : "#1a1a2e" }}>{outputDOP.toFixed(4)}</span></div>
+                    <div className="flex justify-between"><span className="text-[#6b7280]">S₁</span><span className="tabular-nums" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>{outputStokes[1].toFixed(4)}</span></div>
+                    <div className="flex justify-between"><span className="text-[#6b7280]">S₂</span><span className="tabular-nums" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>{outputStokes[2].toFixed(4)}</span></div>
+                    <div className="flex justify-between"><span className="text-[#6b7280]">S₃</span><span className="tabular-nums" style={{ fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace" }}>{outputStokes[3].toFixed(4)}</span></div>
                   </div>
                 </div>
 
@@ -2132,21 +2142,21 @@ export default function JonesPolarizationLab({ onBack }: { onBack: () => void })
                     <ChainStepTable steps={chainSteps} />
                   </div>
                 )}
-              </div>
+              </ControlPanel>
 
               {/* Right visualization area */}
               <div className="flex-1 flex flex-col min-h-0">
                 {viewTab === "ellipse" && (
-                  <div className="flex-1 flex items-center justify-center gap-8 p-6">
+                  <div className={isMobile ? "flex-1 flex flex-col items-center justify-center gap-3 p-3" : "flex-1 flex items-center justify-center gap-8 p-6"}>
                     <div className="flex flex-col items-center gap-2">
-                      <PolarizationCanvas polarization={inputPol} jones={inputJones} label="输入偏振态" size={280} showVector={true} showTrail={true} />
+                      <PolarizationCanvas polarization={inputPol} jones={inputJones} label="输入偏振态" size={isMobile ? 200 : 280} showVector={true} showTrail={true} />
                       <span className="text-[11px] text-[#6b7280]">入射</span>
                     </div>
                     <div className="flex items-center">
                       <svg width="48" height="24" viewBox="0 0 48 24"><line x1="4" y1="12" x2="32" y2="12" stroke="#9ca3af" strokeWidth="1" /><polygon points="32,8 40,12 32,16" fill="#9ca3af" /></svg>
                     </div>
                     <div className="flex flex-col items-center gap-2">
-                      <PolarizationCanvas polarization={outputPol} jones={outputJones} label="输出偏振态" size={280} showVector={true} showTrail={true} />
+                      <PolarizationCanvas polarization={outputPol} jones={outputJones} label="输出偏振态" size={isMobile ? 200 : 280} showVector={true} showTrail={true} />
                       <span className="text-[11px] text-[#6b7280]">出射</span>
                     </div>
                   </div>
@@ -2185,10 +2195,10 @@ export default function JonesPolarizationLab({ onBack }: { onBack: () => void })
             </div>
           )}
 
-          {expMode === "babinet_soleil" && <BabinetSoleilMode />}
-          {expMode === "measurement" && <MeasurementMode />}
-          {expMode === "depolarization" && <DepolarizationMode />}
-          {expMode === "microscope" && <MicroscopeMode />}
+          {expMode === "babinet_soleil" && <BabinetSoleilMode panelOpen={panelOpen} onPanelClose={() => setPanelOpen(false)} />}
+          {expMode === "measurement" && <MeasurementMode panelOpen={panelOpen} onPanelClose={() => setPanelOpen(false)} />}
+          {expMode === "depolarization" && <DepolarizationMode panelOpen={panelOpen} onPanelClose={() => setPanelOpen(false)} />}
+          {expMode === "microscope" && <MicroscopeMode panelOpen={panelOpen} onPanelClose={() => setPanelOpen(false)} />}
         </div>
       )}
     </AnimationTimeProvider>

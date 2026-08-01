@@ -169,7 +169,7 @@ function distToSegment(px: number, py: number, ax: number, ay: number, bx: numbe
 export function generateAperture(params: ApertureParams): Float64Array {
   const { type, gridSize } = params;
   const aperture = new Float64Array(gridSize * gridSize);
-  const half = gridSize / 2;
+  const half = (gridSize - 1) / 2; // 圆心对准：避免偶数网格中心偏移 0.5px
   const apodWidth = params.apodizationWidth ?? 0;
 
   for (let j = 0; j < gridSize; j++) {
@@ -590,7 +590,7 @@ export function computeFresnelDiffraction(
   const total = gridSize * gridSize;
   const re = new Float64Array(total);
   const im = new Float64Array(total);
-  const half = gridSize / 2;
+  const half = (gridSize - 1) / 2; // 圆心对准
 
   for (let j = 0; j < gridSize; j++) {
     const y = (j - half) / half;
@@ -624,7 +624,7 @@ export function generateTwoPointAperture(
   pointRadius: number = 0.02
 ): Float64Array {
   const aperture = new Float64Array(gridSize * gridSize);
-  const half = gridSize / 2;
+  const half = (gridSize - 1) / 2; // 圆心对准
 
   for (let j = 0; j < gridSize; j++) {
     const y = (j - half) / half;
@@ -650,7 +650,7 @@ export function generateFourierHologram(
   referenceAngleDeg: number = 5
 ): Float64Array {
   const aperture = new Float64Array(gridSize * gridSize);
-  const half = gridSize / 2;
+  const half = (gridSize - 1) / 2; // 圆心对准
 
   // Generate object pattern
   for (let j = 0; j < gridSize; j++) {

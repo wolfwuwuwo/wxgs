@@ -15,6 +15,8 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
+import { useIsMobile } from '@/hooks/use-mobile'
+import { ControlPanel, MobilePanelToggle } from './shared/ControlPanel'
 import {
   generateAperture,
   generateComplementaryAperture,
@@ -43,7 +45,7 @@ import {
    Constants
    ═══════════════════════════════════════════════ */
 
-const FONT = 'var(--font-ibm-plex-sans), system-ui, sans-serif'
+const FONT = "system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif"
 const GRID_SIZE = 256
 const PROPAGATION_GRID_SIZE = 64
 const SURFACE_SIZE = 80
@@ -98,7 +100,7 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
     <h3 style={{
       fontSize: '10px', fontWeight: 600, color: '#6b7280',
-      fontFamily: 'var(--font-ibm-plex-mono)',
+      fontFamily: "ui-monospace, 'Cascadia Code', 'Consolas', 'Source Code Pro', monospace",
       textTransform: 'uppercase', letterSpacing: '0.05em',
       margin: '12px 0 6px 0',
       borderTop: '1px solid #E8ECF0', paddingTop: '8px',
@@ -401,6 +403,8 @@ function SliceProfileCanvas({
     canvas.height = h * dpr
     canvas.style.width = `${w}px`
     canvas.style.height = `${h}px`
+    canvas.style.maxWidth = '100%'
+    canvas.style.height = 'auto'
     ctx.scale(dpr, dpr)
 
     ctx.fillStyle = '#ffffff'
@@ -975,9 +979,9 @@ function PropagationEvolutionPanel({
       </div>
 
       {/* Canvases row with arrows */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0' }}>
+      <div className="mobile-x-scroll" style={{ display: 'flex', alignItems: 'center', gap: '0', overflowX: 'auto', maxWidth: '100%', paddingBottom: '4px' }}>
         {results.map((_, idx) => (
-          <div key={idx} style={{ display: 'flex', alignItems: 'center' }}>
+          <div key={idx} style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
             <div style={{ textAlign: 'center' }}>
               <canvas
                 ref={el => { canvasRefs.current[idx] = el }}
@@ -1052,6 +1056,10 @@ function PropagationEvolutionPanel({
    ═══════════════════════════════════════════════ */
 
 export default function VectorDiffractionWorkshop({ onBack }: { onBack: () => void }) {
+  /* ── Mobile panel state ─────────────────────────────────── */
+  const isMobile = useIsMobile()
+  const [panelOpen, setPanelOpen] = useState(false)
+
   /* ── Experiment Mode ────────────────────────────────────── */
   const [expMode, setExpMode] = useState<ExperimentMode>('basic')
 
@@ -1364,39 +1372,43 @@ export default function VectorDiffractionWorkshop({ onBack }: { onBack: () => vo
      RENDER
      ══════════════════════════════════════════════════════════ */
   return (
-    <div className="min-h-screen flex flex-col" style={{ background: '#FFFFFF' }}>
+    <div className="h-full flex flex-col" style={{ background: '#FFFFFF' }}>
       {/* Header */}
       <div className="flex-shrink-0 flex items-center" style={{
-        height: '48px', backgroundColor: '#FFFFFF',
-        borderBottom: '1px solid #CCCCCC', paddingLeft: '24px', paddingRight: '24px',
+        height: isMobile ? '44px' : '48px', backgroundColor: '#FFFFFF',
+        borderBottom: '1px solid #CCCCCC', paddingLeft: isMobile ? '16px' : '24px', paddingRight: isMobile ? '16px' : '24px',
       }}>
         <button onClick={onBack} style={{
-          fontFamily: FONT, fontSize: '12px', fontWeight: 400, color: '#555555',
+          fontFamily: FONT, fontSize: isMobile ? '12px' : '12px', fontWeight: 400, color: '#555555',
           background: 'none', border: 'none', cursor: 'pointer',
           display: 'flex', alignItems: 'center', gap: '4px',
           transition: 'color 200ms ease-out',
+          minHeight: '36px',
         }} onMouseEnter={e => (e.currentTarget.style.color = '#1A1A1A')}
            onMouseLeave={e => (e.currentTarget.style.color = '#555555')}>
           ← 返回
         </button>
-        <span style={{ margin: '0 12px', color: '#D0D0D0' }}>|</span>
-        <h1 style={{ fontFamily: FONT, fontSize: '20px', fontWeight: 600, color: '#1A1A1A', margin: 0 }}>
+        <span style={{ margin: '0 8px', color: '#D0D0D0' }}>|</span>
+        <h1 style={{ fontFamily: FONT, fontSize: isMobile ? '17px' : '20px', fontWeight: 600, color: '#1A1A1A', margin: 0 }}>
           全波前矢量衍射工坊
         </h1>
-        <span style={{
-          marginLeft: '8px', fontSize: '8px', fontWeight: 400, color: '#888888',
-          fontFamily: FONT, padding: '1px 5px',
-          border: '1px solid #D0D0D0', borderRadius: '2px',
-        }}>
-          ASM + 矢量衍射
-        </span>
+        {!isMobile && (
+          <span style={{
+            marginLeft: '8px', fontSize: '8px', fontWeight: 400, color: '#888888',
+            fontFamily: FONT, padding: '1px 5px',
+            border: '1px solid #D0D0D0', borderRadius: '2px',
+          }}>
+            ASM + 矢量衍射
+          </span>
+        )}
+        <MobilePanelToggle onClick={() => setPanelOpen(true)} label="参数" />
       </div>
 
       {/* Main content */}
       <div className="flex flex-1" style={{ minHeight: 0 }}>
         {/* Left: Visualization Area */}
-        <div className="flex-1 custom-scrollbar" style={{
-          display: 'flex', flexDirection: 'column', padding: '16px', overflowY: 'auto',
+        <div className="flex-1 min-w-0 custom-scrollbar" style={{
+          display: 'flex', flexDirection: 'column', padding: isMobile ? '12px' : '16px', overflowY: 'auto',
           alignItems: 'center',
         }}>
           {/* Experiment mode tabs */}
@@ -1561,10 +1573,7 @@ export default function VectorDiffractionWorkshop({ onBack }: { onBack: () => vo
         </div>
 
         {/* Right: Control Panel */}
-        <div className="custom-scrollbar" style={{
-          width: '280px', flexShrink: 0, backgroundColor: '#FAFAFA',
-          borderLeft: '1px solid #D0D0D0', overflowY: 'auto', padding: '16px',
-        }}>
+        <ControlPanel open={panelOpen} onClose={() => setPanelOpen(false)} title="实验参数" desktopWidth="w-72">
           {/* Wavelength */}
           <SectionTitle>波长</SectionTitle>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
@@ -1910,16 +1919,21 @@ export default function VectorDiffractionWorkshop({ onBack }: { onBack: () => vo
             <div>• 巴比涅: I<sub>孔</sub>+I<sub>盘</sub>=常数(轴外)</div>
             <div>• 瑞利判据: δ = 1.22λz/D</div>
           </div>
-        </div>
+        </ControlPanel>
       </div>
 
       {/* Footer */}
       <div className="flex-shrink-0 flex items-center mt-auto" style={{
         height: '24px', backgroundColor: '#FFFFFF',
-        borderTop: '1px solid #CCCCCC', paddingLeft: '24px',
+        borderTop: '1px solid #CCCCCC', paddingLeft: isMobile ? '16px' : '24px', paddingRight: isMobile ? '16px' : '24px',
       }}>
-        <span className="tabular-nums" style={{ fontFamily: FONT, fontSize: '10px', color: '#888888' }}>
-          v2.0 · 角谱衍射理论 + 矢量衍射 + 巴比涅/光栅/瑞利/全息/传播演化
+        <span className="tabular-nums" style={{
+          fontFamily: FONT, fontSize: isMobile ? '9px' : '10px', color: '#888888',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>
+          {isMobile
+            ? 'v2.0 · 矢量衍射工坊'
+            : 'v2.0 · 角谱衍射理论 + 矢量衍射 + 巴比涅/光栅/瑞利/全息/传播演化'}
         </span>
       </div>
     </div>

@@ -40,6 +40,38 @@ const PrismSpectrometer = dynamic(
   () => import('@/components/simulations/PrismSpectrometer'),
   { ssr: false }
 )
+const MichelsonInterferometer = dynamic(
+  () => import('@/components/simulations/MichelsonInterferometer'),
+  { ssr: false }
+)
+const YoungGratingExperiment = dynamic(
+  () => import('@/components/simulations/YoungGratingExperiment'),
+  { ssr: false }
+)
+const FourierOptics4f = dynamic(
+  () => import('@/components/simulations/FourierOptics4f'),
+  { ssr: false }
+)
+const AberrationAnalyzer = dynamic(
+  () => import('@/components/simulations/AberrationAnalyzer'),
+  { ssr: false }
+)
+const TelescopeDesigner = dynamic(
+  () => import('@/components/simulations/TelescopeDesigner'),
+  { ssr: false }
+)
+const MicroscopeSystem = dynamic(
+  () => import('@/components/simulations/MicroscopeSystem'),
+  { ssr: false }
+)
+const LaserResonator = dynamic(
+  () => import('@/components/simulations/LaserResonator'),
+  { ssr: false }
+)
+const PhotonicCrystal = dynamic(
+  () => import('@/components/simulations/PhotonicCrystal'),
+  { ssr: false }
+)
 
 type ViewId =
   | 'home'
@@ -49,12 +81,20 @@ type ViewId =
   | 'physical-polarimeter'
   | 'physical-lcvalve'
   | 'physical-scanner'
+  | 'physical-michelson'
+  | 'physical-young-grating'
   | 'geometric-hub'
   | 'geometric-raytracing'
   | 'geometric-prism'
+  | 'geometric-aberration'
+  | 'geometric-telescope'
+  | 'geometric-microscope'
   | 'modern-hub'
   | 'modern-gaussian'
   | 'modern-fiber'
+  | 'modern-fourier'
+  | 'modern-resonator'
+  | 'modern-photonic'
 
 /* ─── SVG Icons ─── */
 function GeometricOpticsIcon() {
@@ -149,9 +189,9 @@ function ModernOpticsIcon() {
 
 /* ─── Card Data ─── */
 const cards = [
-  { id: 'geometric' as const, title: '几何光学', description: '光线追迹、透镜成像、棱镜分光、光纤传光', icon: GeometricOpticsIcon },
+  { id: 'geometric' as const, title: '几何光学', description: '光线追迹、透镜成像、棱镜分光、望远镜与显微镜系统', icon: GeometricOpticsIcon },
   { id: 'physical' as const, title: '物理光学', description: '干涉、衍射、偏振、旋光、波前再现', icon: PhysicalOpticsIcon },
-  { id: 'modern' as const, title: '现代光学', description: '激光传输、空间滤波、光纤模式、量子光学基础', icon: ModernOpticsIcon },
+  { id: 'modern' as const, title: '现代光学', description: '激光传输、空间滤波、光纤模式、谐振腔与光子晶体', icon: ModernOpticsIcon },
 ]
 
 const physicalSubModules: { id: ViewId; title: string; description: string; iconText: string }[] = [
@@ -160,6 +200,24 @@ const physicalSubModules: { id: ViewId; title: string; description: string; icon
   { id: 'physical-polarimeter', title: '旋光仪实验', description: 'Drude旋光色散+变旋现象+半荫法+浓度测定，6种实验模式，3D虚拟仪器', iconText: 'α' },
   { id: 'physical-scanner', title: '偏振视觉扫描仪', description: 'Sénarmont补偿+RGB色散+3D应力图+定量应力测量+教学演示库，4种实验模式', iconText: '◎' },
   { id: 'physical-lcvalve', title: '液晶旋光光阀实验台', description: 'Oseen-Frank+Berreman 4×4，TN/IPS/VA模式对比，3D指向矢，5种实验模式', iconText: 'LC' },
+  { id: 'physical-michelson', title: '迈克尔逊干涉仪', description: '等倾干涉·等厚干涉·白光干涉·条纹计数，可调镜面倾角与光程差，4种实验模式', iconText: 'M' },
+  { id: 'physical-young-grating', title: '双缝干涉与光栅衍射', description: '杨氏双缝+多缝光栅+衍射级次+角色散，缝宽/缝间距/缝数可调，3种实验模式', iconText: 'Y' },
+]
+
+const geometricSubModules: { id: ViewId; title: string; description: string; iconText: string }[] = [
+  { id: 'geometric-raytracing', title: '光线追迹与透镜成像', description: '薄透镜成像·透镜组合·球面镜·棱镜分光，三条主光线追迹，实时成像判定', iconText: '▽' },
+  { id: 'geometric-prism', title: '棱镜光谱仪', description: 'Cauchy色散+最小偏向角+光谱分析+棱镜组合(Amici/Pellin-Broca)，4种实验模式', iconText: '△' },
+  { id: 'geometric-aberration', title: '光学像差分析', description: '5种初级像差(球差/彗差/像散/场曲/畸变)+点列图+光扇图+Seidel系数，3种实验模式', iconText: '∇' },
+  { id: 'geometric-telescope', title: '望远镜系统设计器', description: '伽利略/开普勒/牛顿/卡塞格林四型望远镜，主光线追迹，放大率与出瞳，遮拦比分析', iconText: 'T' },
+  { id: 'geometric-microscope', title: '显微镜光学系统', description: '物镜+目镜级联成像，数值孔径NA，Abbe分辨率极限，视场与放大率链，3种物镜', iconText: 'M' },
+]
+
+const modernSubModules: { id: ViewId; title: string; description: string; iconText: string }[] = [
+  { id: 'modern-gaussian', title: '高斯光束追踪器', description: '拖拽调节束腰半径、波长、传输距离、透镜焦距，实时渲染光束宽度沙漏形包络曲线与光斑演化', iconText: 'G' },
+  { id: 'modern-fiber', title: '阶跃光纤模式仿真器', description: 'LP模式求解+多模分析+色散特性+耦合效率+弯曲损耗，3D模式场可视化，5种实验模式', iconText: 'Φ' },
+  { id: 'modern-fourier', title: '傅里叶光学 4f 系统', description: '4f系统空间滤波·低通/高通/带通/方向滤波·频谱面可视化·卷积定理演示，4种实验模式', iconText: 'F' },
+  { id: 'modern-resonator', title: '激光谐振腔设计器', description: '稳定性图g1·g2·ABCD往返传输·Hermite-Gaussian本征模·凹凸镜组合，4种腔型', iconText: 'R' },
+  { id: 'modern-photonic', title: '光子晶体带隙仿真', description: '1D/2D周期介电层·带隙图谱·缺陷态模式·布里渊区·透射谱，3种晶格', iconText: 'P' },
 ]
 
 const FONT = 'var(--font-ibm-plex-sans), system-ui, sans-serif'
@@ -200,10 +258,18 @@ export default function Home() {
       'physical-polarimeter': 'physical-hub',
       'physical-lcvalve': 'physical-hub',
       'physical-scanner': 'physical-hub',
+      'physical-michelson': 'physical-hub',
+      'physical-young-grating': 'physical-hub',
       'modern-gaussian': 'modern-hub',
       'modern-fiber': 'modern-hub',
+      'modern-fourier': 'modern-hub',
+      'modern-resonator': 'modern-hub',
+      'modern-photonic': 'modern-hub',
       'geometric-raytracing': 'geometric-hub',
       'geometric-prism': 'geometric-hub',
+      'geometric-aberration': 'geometric-hub',
+      'geometric-telescope': 'geometric-hub',
+      'geometric-microscope': 'geometric-hub',
     }
     navigateTo(parentMap[viewId] || 'home')
   }, [navigateTo])
@@ -221,10 +287,18 @@ export default function Home() {
           'physical-polarimeter': 'physical-hub',
           'physical-lcvalve': 'physical-hub',
           'physical-scanner': 'physical-hub',
+          'physical-michelson': 'physical-hub',
+          'physical-young-grating': 'physical-hub',
           'modern-gaussian': 'modern-hub',
           'modern-fiber': 'modern-hub',
+          'modern-fourier': 'modern-hub',
+          'modern-resonator': 'modern-hub',
+          'modern-photonic': 'modern-hub',
           'geometric-raytracing': 'geometric-hub',
           'geometric-prism': 'geometric-hub',
+          'geometric-aberration': 'geometric-hub',
+          'geometric-telescope': 'geometric-hub',
+          'geometric-microscope': 'geometric-hub',
         }
         const target = parentMap[currentView] || 'home'
         navigateTo(target)
@@ -250,14 +324,38 @@ export default function Home() {
   if (currentView === 'physical-scanner') {
     return <div className={`min-h-screen flex flex-col ${fadeIn ? 'page-fade-in' : ''}`} style={{ background: '#FFFFFF' }}><PolarizationScanner onBack={() => goBack('physical-scanner')} /></div>
   }
+  if (currentView === 'physical-michelson') {
+    return <div className={`min-h-screen flex flex-col ${fadeIn ? 'page-fade-in' : ''}`} style={{ background: '#FFFFFF' }}><MichelsonInterferometer onBack={() => goBack('physical-michelson')} /></div>
+  }
+  if (currentView === 'physical-young-grating') {
+    return <div className={`min-h-screen flex flex-col ${fadeIn ? 'page-fade-in' : ''}`} style={{ background: '#FFFFFF' }}><YoungGratingExperiment onBack={() => goBack('physical-young-grating')} /></div>
+  }
   if (currentView === 'modern-gaussian') {
     return <div className={`min-h-screen flex flex-col ${fadeIn ? 'page-fade-in' : ''}`} style={{ background: '#FFFFFF' }}><GaussianBeamTracer onBack={() => goBack('modern-gaussian')} /></div>
+  }
+  if (currentView === 'modern-fourier') {
+    return <div className={`min-h-screen flex flex-col ${fadeIn ? 'page-fade-in' : ''}`} style={{ background: '#FFFFFF' }}><FourierOptics4f onBack={() => goBack('modern-fourier')} /></div>
+  }
+  if (currentView === 'modern-resonator') {
+    return <div className={`min-h-screen flex flex-col ${fadeIn ? 'page-fade-in' : ''}`} style={{ background: '#FFFFFF' }}><LaserResonator onBack={() => goBack('modern-resonator')} /></div>
+  }
+  if (currentView === 'modern-photonic') {
+    return <div className={`min-h-screen flex flex-col ${fadeIn ? 'page-fade-in' : ''}`} style={{ background: '#FFFFFF' }}><PhotonicCrystal onBack={() => goBack('modern-photonic')} /></div>
   }
   if (currentView === 'geometric-raytracing') {
     return <div className={`min-h-screen flex flex-col ${fadeIn ? 'page-fade-in' : ''}`} style={{ background: '#FFFFFF' }}><RayTracingLab onBack={() => goBack('geometric-raytracing')} /></div>
   }
   if (currentView === 'geometric-prism') {
     return <div className={`min-h-screen flex flex-col ${fadeIn ? 'page-fade-in' : ''}`} style={{ background: '#FFFFFF' }}><PrismSpectrometer onBack={() => goBack('geometric-prism')} /></div>
+  }
+  if (currentView === 'geometric-aberration') {
+    return <div className={`min-h-screen flex flex-col ${fadeIn ? 'page-fade-in' : ''}`} style={{ background: '#FFFFFF' }}><AberrationAnalyzer onBack={() => goBack('geometric-aberration')} /></div>
+  }
+  if (currentView === 'geometric-telescope') {
+    return <div className={`min-h-screen flex flex-col ${fadeIn ? 'page-fade-in' : ''}`} style={{ background: '#FFFFFF' }}><TelescopeDesigner onBack={() => goBack('geometric-telescope')} /></div>
+  }
+  if (currentView === 'geometric-microscope') {
+    return <div className={`min-h-screen flex flex-col ${fadeIn ? 'page-fade-in' : ''}`} style={{ background: '#FFFFFF' }}><MicroscopeSystem onBack={() => goBack('geometric-microscope')} /></div>
   }
   if (currentView === 'modern-fiber') {
     return <div className={`min-h-screen flex flex-col ${fadeIn ? 'page-fade-in' : ''}`} style={{ background: '#FFFFFF' }}><FiberModeSimulator onBack={() => goBack('modern-fiber')} /></div>
@@ -268,11 +366,8 @@ export default function Home() {
     return (
       <ModuleHub
         title="几何光学" fadeIn={fadeIn} fadeOut={fadeOut}
-        onBack={goHome} footerText="v2.1 · 几何光学模块 — 薄透镜·棱镜分光·色散曲线·光谱分析"
-        modules={[
-          { id: 'geometric-raytracing', title: '光线追迹与透镜成像', description: '薄透镜成像·透镜组合·球面镜·棱镜分光，三条主光线追迹，实时成像判定', iconText: '▽' },
-          { id: 'geometric-prism', title: '棱镜光谱仪', description: 'Cauchy色散+最小偏向角+光谱分析+棱镜组合(Amici/Pellin-Broca)，4种实验模式', iconText: '△' },
-        ]}
+        onBack={goHome} footerText="v4.0 · 几何光学模块 — 薄透镜·棱镜分光·像差分析·望远镜·显微镜"
+        modules={geometricSubModules}
         pressedCard={pressedCard} hoveredCard={hoveredCard}
         setHoveredCard={setHoveredCard} setPressedCard={setPressedCard}
         onNavigate={navigateTo}
@@ -285,11 +380,8 @@ export default function Home() {
     return (
       <ModuleHub
         title="现代光学" fadeIn={fadeIn} fadeOut={fadeOut}
-        onBack={goHome} footerText="v2.1 · 现代光学模块 — 高斯光束q参量·光纤LP模式"
-        modules={[
-          { id: 'modern-gaussian', title: '高斯光束追踪器', description: '拖拽调节束腰半径、波长、传输距离、透镜焦距，实时渲染光束宽度沙漏形包络曲线与光斑演化', iconText: 'G' },
-          { id: 'modern-fiber', title: '阶跃光纤模式仿真器', description: 'LP模式求解+多模分析+色散特性+耦合效率+弯曲损耗，3D模式场可视化，5种实验模式', iconText: 'Φ' },
-        ]}
+        onBack={goHome} footerText="v4.0 · 现代光学模块 — 高斯光束q参量·光纤LP模式·傅里叶4f·谐振腔·光子晶体"
+        modules={modernSubModules}
         pressedCard={pressedCard} hoveredCard={hoveredCard}
         setHoveredCard={setHoveredCard} setPressedCard={setPressedCard}
         onNavigate={navigateTo}
@@ -302,7 +394,7 @@ export default function Home() {
     return (
       <ModuleHub
         title="物理光学" fadeIn={fadeIn} fadeOut={fadeOut}
-        onBack={goHome} footerText="v2.1 · 物理光学模块 — 5个实验×3D可视化"
+        onBack={goHome} footerText="v4.0 · 物理光学模块 — 7个实验×3D可视化"
         modules={physicalSubModules}
         pressedCard={pressedCard} hoveredCard={hoveredCard}
         setHoveredCard={setHoveredCard} setPressedCard={setPressedCard}
@@ -362,7 +454,7 @@ export default function Home() {
       </main>
 
       <footer className="flex-shrink-0 flex items-center mt-auto" style={{ height: '24px', backgroundColor: '#FFFFFF', borderTop: '1px solid #CCCCCC', paddingLeft: '24px' }}>
-        <span style={{ fontFamily: FONT, fontSize: '10px', fontWeight: 400, color: '#888888' }} className="tabular-nums">v2.1 · 琼斯矩阵分析 | 矢量衍射ASM | 旋光色散Drude | 偏振应力3D | 液晶Berreman 4×4 | 高斯光束q参量 | 光线追迹 | 光纤LP模式 | 棱镜色散</span>
+        <span style={{ fontFamily: FONT, fontSize: '10px', fontWeight: 400, color: '#888888' }} className="tabular-nums">v4.0 · 琼斯矩阵分析 | 矢量衍射ASM | 旋光色散Drude | 偏振应力3D | 液晶Berreman 4×4 | 迈克尔逊干涉 | 杨氏双缝光栅 | 高斯光束q参量 | 傅里叶4f | 激光谐振腔 | 光子晶体 | 光线追迹 | 棱镜色散 | 像差分析 | 望远镜 | 显微镜 | 光纤LP模式</span>
       </footer>
     </div>
   )
