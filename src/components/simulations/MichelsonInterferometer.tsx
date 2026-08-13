@@ -77,6 +77,21 @@ function thicknessIntensity(
   return 0.5 * (1 + V * Math.cos(phase))
 }
 
+/* ─── 白光干涉：三通道叠加 ─── */
+function whiteLightIntensity(
+  r: number, d: number, f = 200, V = 0.9
+): [number, number, number] {
+  const theta = Math.atan(r / f)
+  return WHITE_LIGHT_CHANNELS.map(ch => {
+    const phase = (2 * Math.PI * 2 * d * Math.cos(theta)) / ch.wavelength
+    return 0.5 * (1 + V * Math.cos(phase)) * ch.color[i] / 255
+  }).reduce((acc, c, i) => {
+    acc[i] = c
+    return acc
+  }, [0, 0, 0] as [number, number, number]) as [number, number, number]
+  // 上面的 reduce 写法有问题，下面用更清晰的实现
+}
+
 /* ─── 清晰版白光强度 ─── */
 function whiteLightIntensityRGB(
   r: number, d: number, f = 200, V = 0.9

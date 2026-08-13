@@ -303,11 +303,16 @@ export function formatIntensity(intensity: number): string {
  * Triple-field intensities using the Lippich half-shadow model.
  *
  * The field is divided into three zones:
- *   Left edge:   cos²(θ + δ − α)
+ *   Left edge:   cos²(θ − δ − α)
  *   Centre:      cos²(θ − α)
  *   Right edge:  cos²(θ − δ − α)
  *
- * The returned `edge` value is the average of both edge zones.
+ * Both edge zones share the same polarization plane, offset from the
+ * centre zone by the half-shadow angle δ. This is the classic
+ * three-part field (三分视场) design: at the null angle
+ * θ = α + 90° + δ/2 all three zones are exactly equally bright (dim),
+ * and near the null the zone-to-zone brightness difference changes
+ * linearly with θ, which is what makes the reading sensitive.
  *
  * @param analyzerAngle    Analyzer angle θ (degrees)
  * @param opticalRotation  Sample optical rotation α (degrees)
@@ -322,12 +327,11 @@ export function tripleFieldIntensities(
   const alpha = deg2rad(opticalRotation);
   const delta = deg2rad(shadowAngle);
 
-  const leftEdge = Math.cos(theta + delta - alpha) ** 2;
-  const rightEdge = Math.cos(theta - delta - alpha) ** 2;
+  const edge = Math.cos(theta - delta - alpha) ** 2;
   const center = Math.cos(theta - alpha) ** 2;
 
   return {
-    edge: (leftEdge + rightEdge) / 2,
+    edge,
     center,
   };
 }
@@ -335,6 +339,7 @@ export function tripleFieldIntensities(
 /**
  * Maximum absolute brightness difference between any two zones in the
  * triple-field view. A value of 0 means all three zones are equally bright.
+ * Since both edge zones are identical, this reduces to |I_edge − I_centre|.
  */
 export function tripleFieldBrightnessDiff(
   analyzerAngle: number,
@@ -345,15 +350,10 @@ export function tripleFieldBrightnessDiff(
   const alpha = deg2rad(opticalRotation);
   const delta = deg2rad(shadowAngle);
 
-  const leftEdge = Math.cos(theta + delta - alpha) ** 2;
-  const rightEdge = Math.cos(theta - delta - alpha) ** 2;
+  const edge = Math.cos(theta - delta - alpha) ** 2;
   const center = Math.cos(theta - alpha) ** 2;
 
-  return Math.max(
-    Math.abs(leftEdge - center),
-    Math.abs(rightEdge - center),
-    Math.abs(leftEdge - rightEdge),
-  );
+  return Math.abs(center - edge);
 }
 
 /**
@@ -419,17 +419,17 @@ export function isNearDimZero(
 /**
  * Measurement sensitivity at the current analyzer angle.
  *
- * Defined as the average of |dΔI_left/dθ| and |dΔI_right/dθ|, where
- * ΔI_left = I_leftEdge − I_centre and ΔI_right = I_rightEdge − I_centre.
+ * Defined as |dΔI/dθ| where ΔI = I_edge − I_centre. The two edge zones
+ * are identical, so this is the rate at which the three-part field
+ * contrast changes per degree of analyzer rotation.
  *
  * The derivative is expressed **per degree** of analyzer rotation,
  * yielding small numerical values suitable for the 0.005 threshold
  * used in `autoDetectDimZero`.
  *
  * Derivation (θ in radians):
- *   d/dθ cos²(θ±δ−α) = −sin(2(θ±δ−α))
- *   dΔI_left/dθ  = −sin(2(θ+δ−α)) + sin(2(θ−α))
- *   dΔI_right/dθ = −sin(2(θ−δ−α)) + sin(2(θ−α))
+ *   d/dθ cos²(θ−δ−α) = −sin(2(θ−δ−α))
+ *   dΔI/dθ           = −sin(2(θ−δ−α)) + sin(2(θ−α))
  *
  * Converting to per-degree: multiply by π/180.
  */
@@ -442,13 +442,12 @@ export function sensitivityAtAngle(
   const alpha = deg2rad(opticalRotation);
   const delta = deg2rad(shadowAngle);
 
-  const dLeft = -Math.sin(2 * (theta + delta - alpha)) + Math.sin(2 * (theta - alpha));
-  const dRight = -Math.sin(2 * (theta - delta - alpha)) + Math.sin(2 * (theta - alpha));
+  const dDiff = -Math.sin(2 * (theta - delta - alpha)) + Math.sin(2 * (theta - alpha));
 
   // Convert from per-radian to per-degree
   const radPerDeg = Math.PI / 180;
 
-  return ((Math.abs(dLeft) + Math.abs(dRight)) / 2) * radPerDeg;
+  return Math.abs(dDiff) * radPerDeg;
 }
 
 /**
@@ -470,34 +469,32 @@ export function autoDetectDimZero(
 /**
  * Find the analyzer angle for the **dim zero** (true extinction).
  *
- * In the triple-field model with ±δ edges, the dim zero occurs where
- * all three zones are approximately equal and minimal.  The centre zone
- * reaches true extinction when θ − α = π/2, i.e.  θ = α + 90°.
- * At that angle both edge zones have intensity sin²(δ), which for
- * typical small δ is negligible.
+ * In the Lippich three-part field model the dim zero occurs where the
+ * three zones are exactly equal and minimal: θ − α = 90° + δ/2, giving
+ * every zone an intensity sin²(δ/2).
  *
  * @returns Analyzer angle in degrees for the dim zero
  */
 export function findDimZeroAngle(
   opticalRotation: number,
-  _shadowAngle: number,
+  shadowAngle: number,
 ): number {
-  // θ = α + 90°
-  return opticalRotation + 90;
+  // θ = α + 90° + δ/2
+  return opticalRotation + 90 + shadowAngle / 2;
 }
 
 /**
  * Find the analyzer angle for the **bright zero** (false zero).
  *
- * The bright zero occurs at θ = α, where the centre zone is at maximum
- * transmission and both edge zones are at cos²(δ) ≈ 1.
+ * The bright zero occurs at θ = α + δ/2, where the centre and edge
+ * zones are equal at cos²(δ/2) ≈ 1.
  *
  * @returns Analyzer angle in degrees for the bright zero
  */
 export function findBrightZeroAngle(
   opticalRotation: number,
-  _shadowAngle: number,
+  shadowAngle: number,
 ): number {
-  // θ = α
-  return opticalRotation;
+  // θ = α + δ/2
+  return opticalRotation + shadowAngle / 2;
 }

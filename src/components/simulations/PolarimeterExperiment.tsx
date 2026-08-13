@@ -1375,11 +1375,10 @@ export default function PolarimeterExperiment({ onBack }: { onBack: () => void }
   const halfShadowDelta = measurementMode === "triple_field" ? shadowAngle : 3.5;
   const halfShadowFields = useMemo(() => {
     const centerEff = analyzerAngle - rotationAngle;
-    const sideEff = (analyzerAngle + halfShadowDelta) - rotationAngle;
-    const sideEff2 = (analyzerAngle - halfShadowDelta) - rotationAngle;
+    const sideEff = (analyzerAngle - halfShadowDelta) - rotationAngle;
     return {
       center: Math.cos((centerEff * Math.PI) / 180) ** 2,
-      left: Math.cos((sideEff2 * Math.PI) / 180) ** 2,
+      left: Math.cos((sideEff * Math.PI) / 180) ** 2,
       right: Math.cos((sideEff * Math.PI) / 180) ** 2,
     };
   }, [analyzerAngle, rotationAngle, halfShadowDelta]);
@@ -1387,7 +1386,7 @@ export default function PolarimeterExperiment({ onBack }: { onBack: () => void }
   // ─── Extinction mode calculations ───
   const extinctionAngle = useMemo(() => {
     if (measurementMode === "triple_field") {
-      const dimZeroBase = 90 + shadowAngle;
+      const dimZeroBase = 90 + shadowAngle / 2;
       return sampleInserted && zeroAngle !== null ? zeroAngle + rotationAngle : dimZeroBase;
     }
     if (sampleInserted && zeroAngle !== null) return zeroAngle + rotationAngle;

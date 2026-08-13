@@ -28,7 +28,8 @@ export function useExperimentState<T extends Record<string, unknown>>(
   const loadExperimentState = useExperimentStore(s => s.loadExperimentState)
   const clearExperimentState = useExperimentStore(s => s.clearExperimentState)
 
-  // 初始化：从缓存恢复（useState 初始化器同步读取缓存）
+  // 初始化：从缓存恢复
+  const [hasRestored, setHasRestored] = useState(false)
   const [state, setStateInternal] = useState<T>(() => {
     if (typeof window === 'undefined') return defaultState
     const cached = loadExperimentState(viewId)
